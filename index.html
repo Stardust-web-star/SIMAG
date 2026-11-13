@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>SIMAG PLN - Sistem Manajemen Gudang & Stok kWh Meter</title>
+    <meta name="description" content="Sistem pendataan stok material kWh meter PLN real-time dengan visualisasi rak gudang, scanner barcode karton, pencatatan pasang baru/ganti meter, notifikasi stok minimum, dan sinkronisasi Google Sheets." />
+    <meta property="og:title" content="SIMAG PLN - Sistem Manajemen Gudang & Stok kWh Meter" />
+    <meta property="og:description" content="Sistem pendataan stok material kWh meter PLN real-time dengan visualisasi rak gudang, scanner barcode karton, pencatatan pasang baru/ganti meter, notifikasi stok minimum, dan sinkronisasi Google Sheets." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="theme-color" content="#007799" />
+    <link rel="icon" type="image/png" href="/assets/aistudio/Logo_PLN_67ac91e8.png" />
+    <link rel="apple-touch-icon" href="/assets/aistudio/Logo_PLN_67ac91e8.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <script>
+      (function () {
+        try {
+          var saved = localStorage.getItem('pln_warehouse_theme');
+          var theme = saved === 'light' || saved === 'dark' ? saved : 'dark';
+          document.documentElement.classList.remove('light', 'dark');
+          document.documentElement.classList.add(theme);
+          document.documentElement.style.colorScheme = theme;
+        } catch (e) {
+          document.documentElement.classList.add('dark');
+        }
+      })();
+    </script>
+  </head>
+  <body class="bg-slate-100 text-slate-900 dark:bg-slate-950 dark:text-slate-100 font-sans antialiased selection:bg-cyan-500 selection:text-white min-h-screen transition-colors duration-200">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

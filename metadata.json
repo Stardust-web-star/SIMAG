@@ -1,0 +1,6 @@
+{
+  "name": "SIMAG PLN - Sistem Manajemen Gudang & Stok kWh Meter",
+  "description": "Sistem pendataan stok material kWh meter PLN real-time dengan visualisasi rak gudang, scanner barcode karton, pencatatan pasang baru/ganti meter, notifikasi stok minimum, dan sinkronisasi Google Sheets.",
+  "requestFramePermissions": ["camera", "notifications"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
