@@ -52,8 +52,23 @@ import {
   ensureSeededUsers,
   getActiveSimagSession,
   logoutSimagSession,
+  saveSimagUsersLocally,
   touchSimagSessionActivity,
 } from './services/simagAuthService';
+import {
+  CloudSyncStatus,
+  hasCustomWarehouseData,
+  pullWarehouseSnapshotFromCloud,
+  testFirestoreConnection,
+  subscribeWarehouseTwoWaySync,
+  syncInboundToCloud,
+  syncAddUnitsToCartonInCloud,
+  syncCartonBrandToCloud,
+  syncOutboundToCloud,
+  syncMoveCartonToCloud,
+  syncRackToCloud,
+  seedWarehouseSnapshotToCloud,
+} from './services/warehouseSyncService';
 import { hardwareScannerService } from './services/hardwareScannerService';
 import { Zap, X, Camera, Plus, Send, FileSpreadsheet, RefreshCw, CheckCircle2, AlertCircle, ExternalLink, Clock } from 'lucide-react';
 
@@ -156,8 +171,13 @@ export default function App() {
   // Alerts
   const [alerts, setAlerts] = useState<StockAlert[]>(() => []);
 
-  // Google Auth & Sheets State
+  // Google Auth, Cloud Sync & Sheets State
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [hasSheetsToken, setHasSheetsToken] = useState<boolean>(false);
+  const [cloudSyncStatus, setCloudSyncStatus] = useState<CloudSyncStatus>({
+    status: 'connecting',
+    message: 'Menghubungkan sinkronisasi dua arah...',
+  });
   const [lastSyncResult, setLastSyncResult] = useState<GoogleSheetsSyncResult | null>(() => {
     const saved = localStorage.getItem('pln_sheets_last_sync');
     return saved ? JSON.parse(saved) : null;
@@ -505,16 +525,157 @@ export default function App() {
   // Initialize Firebase Google Auth listener
   useEffect(() => {
     const unsubscribe = initAuth(
-      (user) => {
+      (user, token) => {
         setCurrentUser(user);
+        setHasSheetsToken(Boolean(token));
       },
       () => {
         setCurrentUser(null);
+        setHasSheetsToken(false);
       }
     );
     return () => {
       if (unsubscribe) unsubscribe();
     };
+  }, []);
+
+  // Automatic Zero-Click Two-Way Cloud Firestore Sync (Google AI Studio <-> Vercel)
+  useEffect(() => {
+    void testFirestoreConnection();
+
+    const snap = latestSnapshotRef.current;
+    const unsubscribe = subscribeWarehouseTwoWaySync({
+      localInitial: {
+        racks: snap.racks,
+        cartons: snap.cartons,
+        meters: snap.meters,
+        outbounds: snap.outbounds,
+        users: ensureSeededUsers(),
+      },
+      onCloudState: (next) => {
+        const current = latestSnapshotRef.current;
+        const nextRacks = next.racks ?? current.racks;
+        const nextCartons = next.cartons ?? current.cartons;
+        const nextMeters = next.meters ?? current.meters;
+        const nextOutbounds = next.outbounds ?? current.outbounds;
+
+        latestSnapshotRef.current = {
+          racks: nextRacks,
+          cartons: nextCartons,
+          meters: nextMeters,
+          outbounds: nextOutbounds,
+        };
+
+        if (next.racks) setRacks(next.racks);
+        if (next.cartons) setCartons(next.cartons);
+        if (next.meters) setMeters(next.meters);
+        if (next.outbounds) setOutbounds(next.outbounds);
+        if (next.users) {
+          saveSimagUsersLocally(next.users);
+          setSimagUsers(next.users);
+          setSimagSession(prev => {
+            if (!prev) return prev;
+            const matched = next.users!.find(u => u.id === prev.userId);
+            if (!matched) return prev;
+            if (
+              matched.nip === prev.nip &&
+              matched.nama === prev.nama &&
+              matched.role === prev.role
+            ) {
+              return prev;
+            }
+            return {
+              ...prev,
+              nip: matched.nip,
+              nama: matched.nama,
+              role: matched.role,
+            };
+          });
+        }
+      },
+      onStatusChange: (status, message) => {
+        setCloudSyncStatus({
+          status,
+          message,
+          lastSyncedAt:
+            status === 'synced'
+              ? new Date().toLocaleTimeString('id-ID', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  second: '2-digit',
+                })
+              : undefined,
+        });
+        if (status === 'error' && message) {
+          console.warn('[SIMAG Cloud Sync]', message);
+        }
+      },
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
+  const handleForceUploadCloud = useCallback(async () => {
+    const snap = latestSnapshotRef.current;
+    setCloudSyncStatus({ status: 'syncing', message: 'Mengunggah data browser ini ke cloud...' });
+    try {
+      await seedWarehouseSnapshotToCloud({
+        racks: snap.racks,
+        cartons: snap.cartons,
+        meters: snap.meters,
+        outbounds: snap.outbounds,
+        users: simagUsers,
+        hasRealData: hasCustomWarehouseData(snap),
+        clearExistingCollections: true,
+      });
+      setCloudSyncStatus({
+        status: 'synced',
+        message: 'Tersinkron Otomatis (AI Studio ↔ Vercel)',
+        lastSyncedAt: new Date().toLocaleTimeString('id-ID', {
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+        }),
+      });
+    } catch (err) {
+      setCloudSyncStatus({ status: 'error', message: 'Gagal mengunggah data ke cloud' });
+      throw err;
+    }
+  }, [simagUsers]);
+
+  const handlePullFromCloud = useCallback(async () => {
+    setCloudSyncStatus({ status: 'syncing', message: 'Mengambil data terbaru dari cloud...' });
+    try {
+      const cloud = await pullWarehouseSnapshotFromCloud();
+      latestSnapshotRef.current = {
+        racks: cloud.racks,
+        cartons: cloud.cartons,
+        meters: cloud.meters,
+        outbounds: cloud.outbounds,
+      };
+      setRacks(cloud.racks);
+      setCartons(cloud.cartons);
+      setMeters(cloud.meters);
+      setOutbounds(cloud.outbounds);
+      if (cloud.users.length > 0) {
+        saveSimagUsersLocally(cloud.users);
+        setSimagUsers(cloud.users);
+      }
+      setCloudSyncStatus({
+        status: 'synced',
+        message: 'Tersinkron Otomatis (AI Studio ↔ Vercel)',
+        lastSyncedAt: new Date().toLocaleTimeString('id-ID', {
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+        }),
+      });
+    } catch (err) {
+      setCloudSyncStatus({ status: 'error', message: 'Gagal mengambil data dari cloud' });
+      throw err;
+    }
   }, []);
 
   // Global Escape key listener to close any active modal cleanly
@@ -591,6 +752,11 @@ export default function App() {
     setCartons(nextCartons);
     setMeters(nextMeters);
 
+    const updatedRack = nextRacks.find(r => r.id === newCarton.rackId);
+    void syncInboundToCloud(updatedRack, newCarton, newUnits).catch(err => {
+      console.error('Gagal sinkron inbound ke cloud:', err);
+    });
+
     // Send push notification
     sendBrowserPushNotification(
       'Material Inbound Berhasil',
@@ -628,6 +794,13 @@ export default function App() {
 
     setCartons(nextCartons);
     setMeters(nextMeters);
+
+    const updatedCarton = nextCartons.find(c => c.id === cartonId);
+    if (updatedCarton) {
+      void syncAddUnitsToCartonInCloud(updatedCarton, newUnits).catch(err => {
+        console.error('Gagal sinkron tambah unit ke cloud:', err);
+      });
+    }
 
     soundEffects.playSuccess();
     vibratePhone([100, 50, 100]);
@@ -670,6 +843,16 @@ export default function App() {
     setCartons(nextCartons);
     setMeters(nextMeters);
 
+    const updatedCarton = nextCartons.find(c => c.id === cartonId);
+    const affectedMeters = nextMeters.filter(
+      m => m.cartonBarcode === targetCarton.cartonBarcode || serialSet.has(m.serialNumber)
+    );
+    if (updatedCarton) {
+      void syncCartonBrandToCloud(updatedCarton, affectedMeters).catch(err => {
+        console.error('Gagal sinkron ubah merek ke cloud:', err);
+      });
+    }
+
     soundEffects.playSuccess();
     vibratePhone();
     sendBrowserPushNotification(
@@ -705,6 +888,11 @@ export default function App() {
 
     setMeters(nextMeters);
     setOutbounds(nextOutbounds);
+
+    const updatedMeter = nextMeters.find(m => m.serialNumber === record.snKwhMeter);
+    void syncOutboundToCloud(updatedMeter, record).catch(err => {
+      console.error('Gagal sinkron outbound ke cloud:', err);
+    });
 
     // Send push notification
     const actionDesc = record.jenisTransaksi === 'PB' 
@@ -779,6 +967,15 @@ export default function App() {
     setMeters(nextMeters);
     setRacks(nextRacks);
 
+    const movedCarton = nextCartons.find(c => c.id === cartonId);
+    const affectedRacks = nextRacks.filter(r => r.id === carton.rackId || r.id === targetRackId);
+    const affectedMeters = nextMeters.filter(m => m.cartonBarcode === carton.cartonBarcode);
+    if (movedCarton) {
+      void syncMoveCartonToCloud(movedCarton, affectedRacks, affectedMeters).catch(err => {
+        console.error('Gagal sinkron pindah rak ke cloud:', err);
+      });
+    }
+
     soundEffects.playScanSuccess();
     vibratePhone();
 
@@ -797,6 +994,9 @@ export default function App() {
     };
     setRacks(nextRacks);
     localStorage.setItem('pln_warehouse_racks', JSON.stringify(nextRacks));
+    void syncRackToCloud(updatedRack).catch(err => {
+      console.error('Gagal sinkron rak ke cloud:', err);
+    });
     soundEffects.playSuccess();
     sendBrowserPushNotification(
       'Nama Rak Berhasil Diperbarui',
@@ -827,6 +1027,16 @@ export default function App() {
       localStorage.setItem('pln_warehouse_cartons', JSON.stringify([]));
       localStorage.setItem('pln_warehouse_meters', JSON.stringify([]));
       localStorage.setItem('pln_warehouse_outbounds', JSON.stringify([]));
+      void seedWarehouseSnapshotToCloud({
+        racks: INITIAL_RACKS,
+        cartons: [],
+        meters: [],
+        outbounds: [],
+        hasRealData: true,
+        clearExistingCollections: true,
+      }).catch(err => {
+        console.error('Gagal reset data cloud:', err);
+      });
       soundEffects.playSuccess();
     }
   };
@@ -871,6 +1081,8 @@ export default function App() {
         onOpenNotifications={() => setIsNotificationsOpen(true)}
         unreadAlertCount={alerts.length}
         currentUser={currentUser}
+        hasSheetsToken={hasSheetsToken}
+        cloudSyncStatus={cloudSyncStatus}
         autoSyncEnabled={autoSyncEnabled}
         autoSyncStatus={autoSyncState.status}
         onResetData={handleResetData}
@@ -1039,7 +1251,14 @@ export default function App() {
         isOpen={isSheetsModalOpen}
         onClose={() => setIsSheetsModalOpen(false)}
         currentUser={currentUser}
-        onUserChange={setCurrentUser}
+        hasSheetsToken={hasSheetsToken}
+        onUserChange={(user, hasToken) => {
+          setCurrentUser(user);
+          setHasSheetsToken(Boolean(hasToken));
+        }}
+        cloudSyncStatus={cloudSyncStatus}
+        onForceUploadCloud={handleForceUploadCloud}
+        onPullFromCloud={handlePullFromCloud}
         lastSyncResult={lastSyncResult}
         autoSyncEnabled={autoSyncEnabled}
         onAutoSyncChange={setAutoSyncEnabled}

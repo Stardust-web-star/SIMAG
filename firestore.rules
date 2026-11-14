@@ -1,0 +1,150 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_.-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function isValidRack(data) {
+      return data.keys().hasAll(['id', 'name', 'zone', 'primaryBrand', 'shelves']) &&
+        data.keys().hasOnly(['id', 'name', 'zone', 'primaryBrand', 'brandColor', 'shelves', 'updatedAt']) &&
+        isValidId(data.id) &&
+        data.name is string && data.name.size() >= 1 && data.name.size() <= 160 &&
+        data.zone is string && data.zone.size() >= 1 && data.zone.size() <= 120 &&
+        data.primaryBrand is string && data.primaryBrand.size() >= 1 && data.primaryBrand.size() <= 80 &&
+        (!('brandColor' in data) || data.brandColor == null || (data.brandColor is string && data.brandColor.size() <= 32)) &&
+        data.shelves is list && data.shelves.size() >= 1 && data.shelves.size() <= 8 &&
+        (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64));
+    }
+
+    function isValidCarton(data) {
+      return data.keys().hasAll(['id', 'cartonBarcode', 'brand', 'phase', 'category', 'unitsCount', 'meterSerials', 'rackId', 'shelfLevel', 'dateInbound', 'receivedBy']) &&
+        data.keys().hasOnly(['id', 'cartonBarcode', 'brand', 'phase', 'category', 'unitsCount', 'meterSerials', 'rackId', 'shelfLevel', 'dateInbound', 'receivedBy', 'notes', 'updatedAt']) &&
+        isValidId(data.id) &&
+        data.cartonBarcode is string && data.cartonBarcode.size() >= 1 && data.cartonBarcode.size() <= 128 &&
+        data.brand is string && data.brand.size() >= 1 && data.brand.size() <= 80 &&
+        data.phase is string && data.phase in ['1 Phasa', '3 Phasa'] &&
+        data.category is string && data.category.size() >= 1 && data.category.size() <= 80 &&
+        data.unitsCount is number && data.unitsCount >= 0 && data.unitsCount <= 100 &&
+        data.meterSerials is list && data.meterSerials.size() <= 100 &&
+        data.rackId is string && data.rackId.size() >= 1 && data.rackId.size() <= 64 &&
+        data.shelfLevel is number && data.shelfLevel >= 1 && data.shelfLevel <= 10 &&
+        data.dateInbound is string && data.dateInbound.size() >= 1 && data.dateInbound.size() <= 64 &&
+        data.receivedBy is string && data.receivedBy.size() >= 1 && data.receivedBy.size() <= 120 &&
+        (!('notes' in data) || data.notes == null || (data.notes is string && data.notes.size() <= 500)) &&
+        (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64));
+    }
+
+    function isValidMeter(data) {
+      return data.keys().hasAll(['serialNumber', 'brand', 'phase', 'category', 'cartonBarcode', 'rackId', 'shelfLevel', 'dateInbound', 'status']) &&
+        data.keys().hasOnly(['serialNumber', 'brand', 'phase', 'category', 'cartonBarcode', 'rackId', 'shelfLevel', 'dateInbound', 'status', 'dispatchId', 'updatedAt']) &&
+        data.serialNumber is string && data.serialNumber.size() >= 1 && data.serialNumber.size() <= 128 &&
+        data.brand is string && data.brand.size() >= 1 && data.brand.size() <= 80 &&
+        data.phase is string && data.phase in ['1 Phasa', '3 Phasa'] &&
+        data.category is string && data.category.size() >= 1 && data.category.size() <= 80 &&
+        data.cartonBarcode is string && data.cartonBarcode.size() >= 1 && data.cartonBarcode.size() <= 128 &&
+        data.rackId is string && data.rackId.size() >= 1 && data.rackId.size() <= 64 &&
+        data.shelfLevel is number && data.shelfLevel >= 1 && data.shelfLevel <= 10 &&
+        data.dateInbound is string && data.dateInbound.size() >= 1 && data.dateInbound.size() <= 64 &&
+        data.status is string && data.status in ['AVAILABLE', 'DISPATCHED', 'QUARANTINE'] &&
+        (!('dispatchId' in data) || data.dispatchId == null || (data.dispatchId is string && data.dispatchId.size() <= 128)) &&
+        (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64));
+    }
+
+    function isValidOutbound(data) {
+      return data.keys().hasAll(['id', 'tanggal', 'jenisTransaksi', 'idPelanggan', 'noMeter', 'nomorAgenda', 'nama', 'tarif', 'daya', 'snKwhMeter', 'snMcb', 'segel', 'kabelTw', 'petugas']) &&
+        data.keys().hasOnly(['id', 'tanggal', 'jenisTransaksi', 'idPelanggan', 'noMeter', 'nomorAgenda', 'nama', 'tarif', 'daya', 'snKwhMeter', 'snMcb', 'segel', 'kabelTw', 'petugas', 'gmKategori', 'gmKeterangan', 'noMeterLama', 'standMeterLama', 'snSegelLama', 'meterBrand', 'meterCategory', 'rackSource', 'updatedAt']) &&
+        isValidId(data.id) &&
+        data.tanggal is string && data.tanggal.size() >= 1 && data.tanggal.size() <= 64 &&
+        data.jenisTransaksi is string && data.jenisTransaksi in ['PB', 'GM'] &&
+        data.idPelanggan is string && data.idPelanggan.size() <= 64 &&
+        data.noMeter is string && data.noMeter.size() <= 128 &&
+        data.nomorAgenda is string && data.nomorAgenda.size() <= 128 &&
+        data.nama is string && data.nama.size() >= 1 && data.nama.size() <= 160 &&
+        data.tarif is string && data.tarif.size() <= 32 &&
+        data.daya is number && data.daya >= 0 &&
+        data.snKwhMeter is string && data.snKwhMeter.size() >= 1 && data.snKwhMeter.size() <= 128 &&
+        data.snMcb is string && data.snMcb.size() <= 128 &&
+        data.segel is string && data.segel.size() <= 128 &&
+        data.kabelTw is number && data.kabelTw >= 0 &&
+        data.petugas is string && data.petugas.size() >= 1 && data.petugas.size() <= 120 &&
+        (!('gmKategori' in data) || data.gmKategori == null || (data.gmKategori is string && data.gmKategori.size() <= 64)) &&
+        (!('gmKeterangan' in data) || data.gmKeterangan == null || (data.gmKeterangan is string && data.gmKeterangan.size() <= 500)) &&
+        (!('noMeterLama' in data) || data.noMeterLama == null || (data.noMeterLama is string && data.noMeterLama.size() <= 128)) &&
+        (!('standMeterLama' in data) || data.standMeterLama == null || (data.standMeterLama is string && data.standMeterLama.size() <= 64)) &&
+        (!('snSegelLama' in data) || data.snSegelLama == null || (data.snSegelLama is string && data.snSegelLama.size() <= 128)) &&
+        (!('meterBrand' in data) || data.meterBrand == null || (data.meterBrand is string && data.meterBrand.size() <= 80)) &&
+        (!('meterCategory' in data) || data.meterCategory == null || (data.meterCategory is string && data.meterCategory.size() <= 80)) &&
+        (!('rackSource' in data) || data.rackSource == null || (data.rackSource is string && data.rackSource.size() <= 120)) &&
+        (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64));
+    }
+
+    function isValidSimagUser(data) {
+      return data.keys().hasAll(['id', 'nip', 'nama', 'role', 'passwordHash', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'nip', 'nama', 'role', 'passwordHash', 'createdAt', 'updatedAt', 'lastLoginAt']) &&
+        isValidId(data.id) &&
+        data.nip is string && data.nip.size() >= 1 && data.nip.size() <= 32 &&
+        data.nama is string && data.nama.size() >= 1 && data.nama.size() <= 120 &&
+        data.role is string && data.role in ['Administrator', 'Kepala Gudang', 'Petugas Gudang', 'Operator'] &&
+        data.passwordHash is string && data.passwordHash.size() >= 64 && data.passwordHash.size() <= 128 &&
+        data.createdAt is string && data.createdAt.size() >= 1 && data.createdAt.size() <= 64 &&
+        data.updatedAt is string && data.updatedAt.size() >= 1 && data.updatedAt.size() <= 64 &&
+        (!('lastLoginAt' in data) || data.lastLoginAt == null || (data.lastLoginAt is string && data.lastLoginAt.size() <= 64));
+    }
+
+    function isValidMeta(data) {
+      return data.keys().hasAll(['schemaVersion', 'hasRealData', 'updatedAt']) &&
+        data.keys().hasOnly(['schemaVersion', 'hasRealData', 'updatedAt', 'lastSource']) &&
+        data.schemaVersion is number &&
+        data.hasRealData is bool &&
+        data.updatedAt is string && data.updatedAt.size() >= 1 && data.updatedAt.size() <= 64 &&
+        (!('lastSource' in data) || data.lastSource == null || (data.lastSource is string && data.lastSource.size() <= 120));
+    }
+
+    match /simag_racks/{rackId} {
+      allow read: if true;
+      allow create, update: if isValidId(rackId) && isValidRack(incoming()) && incoming().id == rackId;
+      allow delete: if isValidId(rackId);
+    }
+
+    match /simag_cartons/{cartonId} {
+      allow read: if true;
+      allow create, update: if isValidId(cartonId) && isValidCarton(incoming()) && incoming().id == cartonId;
+      allow delete: if isValidId(cartonId);
+    }
+
+    match /simag_meters/{serialNumber} {
+      allow read: if true;
+      allow create, update: if isValidId(serialNumber) && isValidMeter(incoming());
+      allow delete: if isValidId(serialNumber);
+    }
+
+    match /simag_outbounds/{outboundId} {
+      allow read: if true;
+      allow create, update: if isValidId(outboundId) && isValidOutbound(incoming()) && incoming().id == outboundId;
+      allow delete: if isValidId(outboundId);
+    }
+
+    match /simag_users/{userId} {
+      allow read: if true;
+      allow create, update: if isValidId(userId) && isValidSimagUser(incoming()) && incoming().id == userId;
+      allow delete: if isValidId(userId);
+    }
+
+    match /simag_meta/{metaId} {
+      allow read: if true;
+      allow create, update: if isValidId(metaId) && isValidMeta(incoming());
+      allow delete: if false;
+    }
+  }
+}

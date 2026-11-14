@@ -4,6 +4,10 @@
  */
 
 import { SimagRole, SimagSession, SimagUser } from '../types/auth';
+import {
+  syncSimagUserDeleteFromCloud,
+  syncSimagUserUpsertToCloud,
+} from './warehouseSyncService';
 
 const USERS_STORAGE_KEY = 'pln_simag_users_v1';
 const SEEDED_FLAG_KEY = 'pln_simag_users_seeded_v1';
@@ -117,8 +121,13 @@ function buildDefaultUsers(): SimagUser[] {
   ];
 }
 
-function saveUsers(users: SimagUser[]): void {
+export function saveSimagUsersLocally(users: SimagUser[]): void {
   localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
+  localStorage.setItem(SEEDED_FLAG_KEY, 'true');
+}
+
+function saveUsers(users: SimagUser[]): void {
+  saveSimagUsersLocally(users);
 }
 
 export function ensureSeededUsers(): SimagUser[] {
@@ -173,10 +182,12 @@ export function authenticateSimagUser(
   }
 
   const nowIso = new Date().toISOString();
+  const updatedUser = { ...matched, lastLoginAt: nowIso };
   const updatedUsers = users.map(u =>
-    u.id === matched.id ? { ...u, lastLoginAt: nowIso } : u
+    u.id === matched.id ? updatedUser : u
   );
   saveUsers(updatedUsers);
+  void syncSimagUserUpsertToCloud(updatedUser).catch(() => {});
 
   const session: SimagSession = {
     userId: matched.id,
@@ -294,6 +305,7 @@ export function createSimagUser(
 
   const nextUsers = [...users, created];
   saveUsers(nextUsers);
+  void syncSimagUserUpsertToCloud(created).catch(() => {});
   return { ok: true, users: nextUsers, created };
 }
 
@@ -324,10 +336,12 @@ export function changeSimagUserPassword(
 
   const now = new Date().toISOString();
   const newHash = sha256Hex(newPassword);
+  const updatedTarget = { ...target, passwordHash: newHash, updatedAt: now };
   const nextUsers = users.map(u =>
-    u.id === targetUserId ? { ...u, passwordHash: newHash, updatedAt: now } : u
+    u.id === targetUserId ? updatedTarget : u
   );
   saveUsers(nextUsers);
+  void syncSimagUserUpsertToCloud(updatedTarget).catch(() => {});
   return { ok: true, users: nextUsers };
 }
 
@@ -361,5 +375,6 @@ export function deleteSimagUser(
 
   const nextUsers = users.filter(u => u.id !== targetUserId);
   saveUsers(nextUsers);
+  void syncSimagUserDeleteFromCloud(targetUserId).catch(() => {});
   return { ok: true, users: nextUsers };
 }

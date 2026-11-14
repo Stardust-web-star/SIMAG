@@ -1,0 +1,144 @@
+{
+  "entities": {
+    "WarehouseRack": {
+      "title": "WarehouseRack",
+      "description": "Physical warehouse rack definition and 4-shelf carton slot occupancy",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-zA-Z0-9_.-]+$" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "zone": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "primaryBrand": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "brandColor": { "type": "string", "maxLength": 32 },
+        "shelves": { "type": "array", "description": "4 shelf levels with carton IDs" },
+        "updatedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "name", "zone", "primaryBrand", "shelves"]
+    },
+    "InboundCarton": {
+      "title": "InboundCarton",
+      "description": "Carton box of kWh meters stored in a warehouse shelf slot",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_.-]+$" },
+        "cartonBarcode": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "brand": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "phase": { "type": "string", "enum": ["1 Phasa", "3 Phasa"] },
+        "category": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "unitsCount": { "type": "number" },
+        "meterSerials": { "type": "array" },
+        "rackId": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "shelfLevel": { "type": "number" },
+        "dateInbound": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "receivedBy": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "notes": { "type": "string", "maxLength": 500 },
+        "updatedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "cartonBarcode", "brand", "phase", "category", "unitsCount", "meterSerials", "rackId", "shelfLevel", "dateInbound", "receivedBy"]
+    },
+    "MeterUnit": {
+      "title": "MeterUnit",
+      "description": "Individual kWh meter unit tracked by serial number",
+      "type": "object",
+      "properties": {
+        "serialNumber": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "brand": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "phase": { "type": "string", "enum": ["1 Phasa", "3 Phasa"] },
+        "category": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "cartonBarcode": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "rackId": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "shelfLevel": { "type": "number" },
+        "dateInbound": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "status": { "type": "string", "enum": ["AVAILABLE", "DISPATCHED", "QUARANTINE"] },
+        "dispatchId": { "type": "string", "maxLength": 128 },
+        "updatedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["serialNumber", "brand", "phase", "category", "cartonBarcode", "rackId", "shelfLevel", "dateInbound", "status"]
+    },
+    "OutboundRecord": {
+      "title": "OutboundRecord",
+      "description": "Material dispatch transaction (PB or GM)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_.-]+$" },
+        "tanggal": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "jenisTransaksi": { "type": "string", "enum": ["PB", "GM"] },
+        "idPelanggan": { "type": "string", "maxLength": 64 },
+        "noMeter": { "type": "string", "maxLength": 128 },
+        "nomorAgenda": { "type": "string", "maxLength": 128 },
+        "nama": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "tarif": { "type": "string", "maxLength": 32 },
+        "daya": { "type": "number" },
+        "snKwhMeter": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "snMcb": { "type": "string", "maxLength": 128 },
+        "segel": { "type": "string", "maxLength": 128 },
+        "kabelTw": { "type": "number" },
+        "petugas": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "gmKategori": { "type": "string", "maxLength": 64 },
+        "gmKeterangan": { "type": "string", "maxLength": 500 },
+        "noMeterLama": { "type": "string", "maxLength": 128 },
+        "standMeterLama": { "type": "string", "maxLength": 64 },
+        "snSegelLama": { "type": "string", "maxLength": 128 },
+        "meterBrand": { "type": "string", "maxLength": 80 },
+        "meterCategory": { "type": "string", "maxLength": 80 },
+        "rackSource": { "type": "string", "maxLength": 120 },
+        "updatedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "tanggal", "jenisTransaksi", "idPelanggan", "noMeter", "nomorAgenda", "nama", "tarif", "daya", "snKwhMeter", "snMcb", "segel", "kabelTw", "petugas"]
+    },
+    "SimagUser": {
+      "title": "SimagUser",
+      "description": "SIMAG PLN operator account with hashed password",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_.-]+$" },
+        "nip": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "nama": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "role": { "type": "string", "enum": ["Administrator", "Kepala Gudang", "Petugas Gudang", "Operator"] },
+        "passwordHash": { "type": "string", "minLength": 64, "maxLength": 128 },
+        "createdAt": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "updatedAt": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "lastLoginAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "nip", "nama", "role", "passwordHash", "createdAt", "updatedAt"]
+    },
+    "WarehouseSyncMeta": {
+      "title": "WarehouseSyncMeta",
+      "description": "Synchronization metadata for initial seed protection",
+      "type": "object",
+      "properties": {
+        "schemaVersion": { "type": "number" },
+        "hasRealData": { "type": "boolean" },
+        "updatedAt": { "type": "string", "maxLength": 64 },
+        "lastSource": { "type": "string", "maxLength": 120 }
+      },
+      "required": ["schemaVersion", "hasRealData", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/simag_racks/{rackId}": {
+      "schema": { "$ref": "#/entities/WarehouseRack" },
+      "description": "Warehouse racks and shelf slot placements"
+    },
+    "/simag_cartons/{cartonId}": {
+      "schema": { "$ref": "#/entities/InboundCarton" },
+      "description": "Inbound kWh meter cartons"
+    },
+    "/simag_meters/{serialNumber}": {
+      "schema": { "$ref": "#/entities/MeterUnit" },
+      "description": "Individual kWh meter units"
+    },
+    "/simag_outbounds/{outboundId}": {
+      "schema": { "$ref": "#/entities/OutboundRecord" },
+      "description": "Outbound dispatch records (PB & GM)"
+    },
+    "/simag_users/{userId}": {
+      "schema": { "$ref": "#/entities/SimagUser" },
+      "description": "SIMAG portal users and roles"
+    },
+    "/simag_meta/{metaId}": {
+      "schema": { "$ref": "#/entities/WarehouseSyncMeta" },
+      "description": "Cross-domain initialization and sync state metadata"
+    }
+  }
+}

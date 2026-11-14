@@ -3,20 +3,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { initializeApp, getApps, getApp } from 'firebase/app';
 import { 
-  getAuth, 
   signInWithPopup, 
   GoogleAuthProvider, 
   onAuthStateChanged, 
   User, 
   signOut 
 } from 'firebase/auth';
-import firebaseConfig from '../../firebase-applet-config.json';
+import { auth } from './firebase';
 
-// Reuse existing Firebase app instance if already initialized
-const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
-export const auth = getAuth(app);
+export { auth };
 
 export const SCOPES = [
   'https://www.googleapis.com/auth/spreadsheets',
@@ -39,8 +35,8 @@ export const initAuth = (
       if (cachedAccessToken) {
         if (onAuthSuccess) onAuthSuccess(user, cachedAccessToken);
       } else if (!isSigningIn) {
-        // Token not cached yet, will be retrieved on user action or refresh
-        if (onAuthFailure) onAuthFailure();
+        // User signed in across refresh; Sheets OAuth token will be requested on sign-in
+        if (onAuthSuccess) onAuthSuccess(user, '');
       }
     } else {
       cachedAccessToken = null;

@@ -31,6 +31,10 @@ class HardwareScannerService {
     if (typeof window === 'undefined') return;
 
     window.addEventListener('keydown', (e: KeyboardEvent) => {
+      if (!e || typeof e.key !== 'string' || !e.key) {
+        return;
+      }
+
       const now = Date.now();
 
       // Ignore single modifier keys (Shift, Ctrl, Alt, Meta)
