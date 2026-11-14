@@ -17,29 +17,8 @@ import {
 } from './data/initialData';
 import { 
   initAuth,
-  ensureAutoCloudSession,
-  CloudAutoAuthDisabledError,
-  googleCloudSignIn,
-  getAccessToken,
-  hasCachedSheetsToken,
-  clearAccessToken
+  getAccessToken
 } from './services/googleAuth';
-import {
-  bootstrapAndSubscribeWarehouse,
-  forceUploadLocalToCloud,
-  pullLatestFromCloud,
-  pushInboundToCloud,
-  pushAddUnitsToCartonToCloud,
-  pushUpdateCartonBrandToCloud,
-  pushOutboundToCloud,
-  pushMoveCartonToCloud,
-  pushUpdateRackToCloud,
-  pushResetWarehouseToCloud,
-  pushUpsertSimagUserToCloud,
-  pushDeleteSimagUserFromCloud,
-  pushSimagUserLoginTimeToCloud,
-  CloudSyncStatus,
-} from './services/firestoreSync';
 import { 
   findOrCreateWarehouseSpreadsheet,
   syncWarehouseToGoogleSheets,
@@ -74,10 +53,9 @@ import {
   getActiveSimagSession,
   logoutSimagSession,
   touchSimagSessionActivity,
-  overwriteLocalSimagUsers,
 } from './services/simagAuthService';
 import { hardwareScannerService } from './services/hardwareScannerService';
-import { Zap, X, Camera, Plus, Send, FileSpreadsheet, RefreshCw, CheckCircle2, AlertCircle, ExternalLink, Clock, Cloud } from 'lucide-react';
+import { Zap, X, Camera, Plus, Send, FileSpreadsheet, RefreshCw, CheckCircle2, AlertCircle, ExternalLink, Clock } from 'lucide-react';
 
 export default function App() {
   // Theme (Light Mode & Dark Mode)
@@ -178,17 +156,8 @@ export default function App() {
   // Alerts
   const [alerts, setAlerts] = useState<StockAlert[]>(() => []);
 
-  // Google Auth, Two-Way Cloud Sync & Sheets State
+  // Google Auth & Sheets State
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [hasSheetsToken, setHasSheetsToken] = useState<boolean>(() => hasCachedSheetsToken());
-  const [cloudSyncStatus, setCloudSyncStatus] = useState<CloudSyncStatus>({
-    status: 'connecting',
-    message: 'Menghubungkan sinkronisasi otomatis dua arah...',
-  });
-  const [isConnectingCloud, setIsConnectingCloud] = useState(false);
-  const [cloudConnectError, setCloudConnectError] = useState<string | null>(null);
-  const [cloudAutoNeedsSetup, setCloudAutoNeedsSetup] = useState(false);
-  const [isCloudBannerDismissed, setIsCloudBannerDismissed] = useState(false);
   const [lastSyncResult, setLastSyncResult] = useState<GoogleSheetsSyncResult | null>(() => {
     const saved = localStorage.getItem('pln_sheets_last_sync');
     return saved ? JSON.parse(saved) : null;
@@ -210,8 +179,6 @@ export default function App() {
 
   const latestSnapshotRef = useRef({ racks, cartons, meters, outbounds });
   latestSnapshotRef.current = { racks, cartons, meters, outbounds };
-  const latestSimagUsersRef = useRef<SimagUser[]>(simagUsers);
-  latestSimagUsersRef.current = simagUsers;
 
   const lastSpreadsheetIdRef = useRef<string | null>(lastSyncResult?.spreadsheetId || null);
   const syncInFlightRef = useRef(false);
@@ -369,8 +336,7 @@ export default function App() {
       return result;
     } catch (err: any) {
       if (err instanceof GoogleSheetsAuthError) {
-        clearAccessToken();
-        setHasSheetsToken(false);
+        setCurrentUser(null);
         setAutoSyncState({
           status: 'needs-reauth',
           message: err.message,
@@ -404,99 +370,6 @@ export default function App() {
       }
     }
   }, [showSyncToast]);
-
-  const runCloudPush = useCallback((task: () => Promise<void>) => {
-    task().catch((err) => {
-      const msg = err instanceof Error ? err.message : 'Gagal menyimpan pembaruan ke Cloud.';
-      setCloudSyncStatus({ status: 'error', message: msg });
-    });
-  }, []);
-
-  const handleForceUploadCloud = useCallback(async () => {
-    if (!currentUser) return;
-    setCloudSyncStatus({ status: 'syncing', message: 'Mengunggah data browser ini ke Cloud...' });
-    await forceUploadLocalToCloud(currentUser, {
-      ...latestSnapshotRef.current,
-      simagUsers: latestSimagUsersRef.current,
-    });
-    const nowTime = new Date().toLocaleTimeString('id-ID', {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    });
-    setCloudSyncStatus({
-      status: 'synced',
-      message: 'Sinkronisasi dua arah aktif (Google AI Studio ⇄ Vercel)',
-      lastSyncedAt: nowTime,
-    });
-  }, [currentUser]);
-
-  const handlePullFromCloud = useCallback(async () => {
-    if (!currentUser) return;
-    setCloudSyncStatus({ status: 'syncing', message: 'Mengambil data terbaru dari Cloud...' });
-    const payload = await pullLatestFromCloud(currentUser, {
-      racks: latestSnapshotRef.current.racks,
-      simagUsers: latestSimagUsersRef.current,
-    });
-    latestSnapshotRef.current = {
-      racks: payload.racks,
-      cartons: payload.cartons,
-      meters: payload.meters,
-      outbounds: payload.outbounds,
-    };
-    latestSimagUsersRef.current = payload.simagUsers;
-    setRacks(payload.racks);
-    setCartons(payload.cartons);
-    setMeters(payload.meters);
-    setOutbounds(payload.outbounds);
-    setSimagUsers(payload.simagUsers);
-    overwriteLocalSimagUsers(payload.simagUsers);
-    setCloudSyncStatus({
-      status: 'synced',
-      message: 'Sinkronisasi dua arah aktif (Google AI Studio ⇄ Vercel)',
-      lastSyncedAt: payload.lastSyncedAt,
-    });
-  }, [currentUser]);
-
-  const startAutoCloudAuth = useCallback(async () => {
-    setIsConnectingCloud(true);
-    setCloudConnectError(null);
-    setCloudSyncStatus({
-      status: 'connecting',
-      message: 'Menghubungkan sinkronisasi otomatis dua arah...',
-    });
-    try {
-      const user = await ensureAutoCloudSession();
-      setCurrentUser(user);
-      setCloudAutoNeedsSetup(false);
-      setIsCloudBannerDismissed(false);
-    } catch (err: any) {
-      const msg = err?.message || 'Gagal menghubungkan sinkronisasi cloud otomatis.';
-      if (err instanceof CloudAutoAuthDisabledError) {
-        setCloudAutoNeedsSetup(true);
-      }
-      setCloudConnectError(msg);
-      setCloudSyncStatus({ status: 'error', message: msg });
-    } finally {
-      setIsConnectingCloud(false);
-    }
-  }, []);
-
-  const handleQuickCloudConnect = useCallback(async () => {
-    setIsConnectingCloud(true);
-    setCloudConnectError(null);
-    try {
-      const res = await googleCloudSignIn();
-      setCurrentUser(res.user);
-      setHasSheetsToken(res.hasSheetsToken);
-      setCloudAutoNeedsSetup(false);
-      setIsCloudBannerDismissed(false);
-    } catch (err: any) {
-      setCloudConnectError(err?.message || 'Gagal menghubungkan akun Google Cloud.');
-    } finally {
-      setIsConnectingCloud(false);
-    }
-  }, []);
 
   const handleSimagLogout = useCallback((expiredMessage?: string) => {
     logoutSimagSession();
@@ -629,92 +502,20 @@ export default function App() {
     };
   }, [simagSession, isScannerOpen, scannerCallback, isInboundOpen, isOutboundOpen, isKassenModalOpen]);
 
-  // Initialize Firebase Auth listener & automatic zero-click cloud sync session
+  // Initialize Firebase Google Auth listener
   useEffect(() => {
     const unsubscribe = initAuth(
-      (user, hasToken) => {
+      (user) => {
         setCurrentUser(user);
-        setHasSheetsToken(hasToken);
-        setCloudAutoNeedsSetup(false);
-        setCloudConnectError(null);
       },
       () => {
         setCurrentUser(null);
-        setHasSheetsToken(false);
       }
     );
-
-    void startAutoCloudAuth();
-
-    const handleOnline = () => {
-      void startAutoCloudAuth();
-    };
-    window.addEventListener('online', handleOnline);
-
     return () => {
-      window.removeEventListener('online', handleOnline);
       if (unsubscribe) unsubscribe();
     };
-  }, [startAutoCloudAuth]);
-
-  // Two-way Real-Time Cloud Sync (Google AI Studio <-> Vercel via Firestore)
-  useEffect(() => {
-    if (!currentUser) {
-      return;
-    }
-
-    let isCancelled = false;
-    let unsubCloud: (() => void) | undefined;
-
-    bootstrapAndSubscribeWarehouse(
-      currentUser,
-      () => ({
-        ...latestSnapshotRef.current,
-        simagUsers: latestSimagUsersRef.current,
-      }),
-      (payload) => {
-        if (isCancelled) return;
-        latestSnapshotRef.current = {
-          racks: payload.racks,
-          cartons: payload.cartons,
-          meters: payload.meters,
-          outbounds: payload.outbounds,
-        };
-        latestSimagUsersRef.current = payload.simagUsers;
-        setRacks(payload.racks);
-        setCartons(payload.cartons);
-        setMeters(payload.meters);
-        setOutbounds(payload.outbounds);
-        setSimagUsers(payload.simagUsers);
-        overwriteLocalSimagUsers(payload.simagUsers);
-      },
-      (status) => {
-        if (!isCancelled) {
-          setCloudSyncStatus(status);
-        }
-      }
-    )
-      .then((unsub) => {
-        if (isCancelled) {
-          unsub();
-        } else {
-          unsubCloud = unsub;
-        }
-      })
-      .catch((err) => {
-        if (!isCancelled) {
-          setCloudSyncStatus({
-            status: 'error',
-            message: err instanceof Error ? err.message : 'Gagal menghubungkan Cloud Sync dua arah.',
-          });
-        }
-      });
-
-    return () => {
-      isCancelled = true;
-      if (unsubCloud) unsubCloud();
-    };
-  }, [currentUser]);
+  }, []);
 
   // Global Escape key listener to close any active modal cleanly
   useEffect(() => {
@@ -790,11 +591,6 @@ export default function App() {
     setCartons(nextCartons);
     setMeters(nextMeters);
 
-    if (currentUser) {
-      const updatedRack = nextRacks.find(r => r.id === newCarton.rackId);
-      runCloudPush(() => pushInboundToCloud(currentUser, newCarton, newUnits, updatedRack));
-    }
-
     // Send push notification
     sendBrowserPushNotification(
       'Material Inbound Berhasil',
@@ -832,13 +628,6 @@ export default function App() {
 
     setCartons(nextCartons);
     setMeters(nextMeters);
-
-    if (currentUser) {
-      const updatedCarton = nextCartons.find(c => c.id === cartonId);
-      if (updatedCarton) {
-        runCloudPush(() => pushAddUnitsToCartonToCloud(currentUser, updatedCarton, newUnits));
-      }
-    }
 
     soundEffects.playSuccess();
     vibratePhone([100, 50, 100]);
@@ -881,16 +670,6 @@ export default function App() {
     setCartons(nextCartons);
     setMeters(nextMeters);
 
-    if (currentUser) {
-      const updatedCarton = nextCartons.find(c => c.id === cartonId);
-      const updatedMeters = nextMeters.filter(
-        m => m.cartonBarcode === targetCarton.cartonBarcode || serialSet.has(m.serialNumber)
-      );
-      if (updatedCarton) {
-        runCloudPush(() => pushUpdateCartonBrandToCloud(currentUser, updatedCarton, updatedMeters));
-      }
-    }
-
     soundEffects.playSuccess();
     vibratePhone();
     sendBrowserPushNotification(
@@ -926,11 +705,6 @@ export default function App() {
 
     setMeters(nextMeters);
     setOutbounds(nextOutbounds);
-
-    if (currentUser) {
-      const updatedMeter = nextMeters.find(m => m.serialNumber === record.snKwhMeter);
-      runCloudPush(() => pushOutboundToCloud(currentUser, record, updatedMeter));
-    }
 
     // Send push notification
     const actionDesc = record.jenisTransaksi === 'PB' 
@@ -1005,15 +779,6 @@ export default function App() {
     setMeters(nextMeters);
     setRacks(nextRacks);
 
-    if (currentUser) {
-      const updatedCarton = nextCartons.find(c => c.id === cartonId);
-      const updatedMeters = nextMeters.filter(m => m.cartonBarcode === carton.cartonBarcode);
-      const affectedRacks = nextRacks.filter(r => r.id === carton.rackId || r.id === targetRackId);
-      if (updatedCarton) {
-        runCloudPush(() => pushMoveCartonToCloud(currentUser, updatedCarton, updatedMeters, affectedRacks));
-      }
-    }
-
     soundEffects.playScanSuccess();
     vibratePhone();
 
@@ -1032,9 +797,6 @@ export default function App() {
     };
     setRacks(nextRacks);
     localStorage.setItem('pln_warehouse_racks', JSON.stringify(nextRacks));
-    if (currentUser) {
-      runCloudPush(() => pushUpdateRackToCloud(currentUser, updatedRack));
-    }
     soundEffects.playSuccess();
     sendBrowserPushNotification(
       'Nama Rak Berhasil Diperbarui',
@@ -1049,11 +811,6 @@ export default function App() {
   // Reset to clean state for real warehouse logging
   const handleResetData = () => {
     if (window.confirm('Kosongkan semua data stok kWh meter? Data akan di-reset ke 0 untuk memulai pendataan riil gudang PLN.')) {
-      const prevSnap = latestSnapshotRef.current;
-      const prevCartonIds = prevSnap.cartons.map(c => c.id);
-      const prevMeterSns = prevSnap.meters.map(m => m.serialNumber);
-      const prevOutboundIds = prevSnap.outbounds.map(o => o.id);
-
       latestSnapshotRef.current = {
         racks: INITIAL_RACKS,
         cartons: [],
@@ -1070,17 +827,6 @@ export default function App() {
       localStorage.setItem('pln_warehouse_cartons', JSON.stringify([]));
       localStorage.setItem('pln_warehouse_meters', JSON.stringify([]));
       localStorage.setItem('pln_warehouse_outbounds', JSON.stringify([]));
-      if (currentUser) {
-        runCloudPush(() =>
-          pushResetWarehouseToCloud(
-            currentUser,
-            INITIAL_RACKS,
-            prevCartonIds,
-            prevMeterSns,
-            prevOutboundIds
-          )
-        );
-      }
       soundEffects.playSuccess();
     }
   };
@@ -1091,28 +837,16 @@ export default function App() {
         onLoginSuccess={(session, updatedUsers) => {
           lastActivityAtRef.current = session.lastActivityAt;
           lastTouchPersistRef.current = Date.now();
-          latestSimagUsersRef.current = updatedUsers;
           setSimagUsers(updatedUsers);
           setSimagSession(session);
           setLoginNotice(null);
           setIdleWarningSeconds(null);
           setActiveTab('racks');
-          if (currentUser) {
-            const loggedUser = updatedUsers.find(u => u.id === session.userId);
-            if (loggedUser) {
-              void pushSimagUserLoginTimeToCloud(currentUser, loggedUser);
-            }
-          }
         }}
         inactivityNotice={loginNotice}
         onDismissNotice={() => setLoginNotice(null)}
         theme={theme}
         onToggleTheme={() => setTheme(prev => (prev === 'dark' ? 'light' : 'dark'))}
-        cloudUser={currentUser}
-        cloudStatus={cloudSyncStatus}
-        onConnectCloud={handleQuickCloudConnect}
-        isConnectingCloud={isConnectingCloud}
-        cloudError={cloudConnectError}
       />
     );
   }
@@ -1137,8 +871,6 @@ export default function App() {
         onOpenNotifications={() => setIsNotificationsOpen(true)}
         unreadAlertCount={alerts.length}
         currentUser={currentUser}
-        hasSheetsToken={hasSheetsToken}
-        cloudSyncStatus={cloudSyncStatus}
         autoSyncEnabled={autoSyncEnabled}
         autoSyncStatus={autoSyncState.status}
         onResetData={handleResetData}
@@ -1150,82 +882,6 @@ export default function App() {
 
       {/* Main Body Content */}
       <main className="flex-1 max-w-7xl w-full min-w-0 mx-auto px-3 sm:px-6 py-5 pb-24 sm:pb-6 space-y-6">
-        {/* One-time Firebase Console setup notice ONLY if Anonymous provider isn't enabled yet */}
-        {!currentUser && cloudAutoNeedsSetup && !isCloudBannerDismissed && (
-          <div className="p-3.5 sm:px-4 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-500/40 space-y-2.5">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="flex items-start sm:items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-amber-100 dark:bg-amber-500/20 border border-amber-200 dark:border-amber-500/30 text-amber-700 dark:text-amber-300 flex items-center justify-center shrink-0">
-                  <Cloud className="w-4 h-4" />
-                </div>
-                <div>
-                  <p className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
-                    Aktifkan 1 Pengaturan di Firebase Console agar Sinkronisasi Otomatis Tanpa Klik
-                  </p>
-                  <p className="text-[11px] sm:text-xs text-slate-600 dark:text-slate-300">
-                    Buka{' '}
-                    <a
-                      href="https://console.firebase.google.com/project/gen-lang-client-0109040418/authentication/providers"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="underline font-bold text-amber-700 dark:text-amber-300"
-                    >
-                      Firebase Authentication → Sign-in method
-                    </a>{' '}
-                    lalu aktifkan provider <strong>Anonymous</strong>. Setelah aktif, Google AI Studio &amp; Vercel otomatis tersinkron tanpa klik tombol apapun.
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
-                <button
-                  type="button"
-                  disabled={isConnectingCloud}
-                  onClick={() => void startAutoCloudAuth()}
-                  className="btn-tactile px-3 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white text-xs font-bold shadow-xs cursor-pointer"
-                >
-                  {isConnectingCloud ? 'Mencoba...' : 'Coba Otomatis Lagi'}
-                </button>
-                <button
-                  type="button"
-                  disabled={isConnectingCloud}
-                  onClick={() => void handleQuickCloudConnect()}
-                  className="btn-tactile px-3 py-2 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 text-xs font-semibold cursor-pointer"
-                >
-                  Masuk Google
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsCloudBannerDismissed(true)}
-                  className="p-1.5 rounded-lg text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white hover:bg-amber-100/70 dark:hover:bg-slate-800 cursor-pointer"
-                  title="Tutup sementara"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Cloud Sync Error Alert if Firestore reports an issue */}
-        {currentUser && cloudSyncStatus.status === 'error' && cloudSyncStatus.message && (
-          <div className="p-3.5 sm:px-4 rounded-2xl bg-rose-50 dark:bg-rose-950/30 border border-rose-300 dark:border-rose-500/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-start gap-2.5 text-xs text-rose-700 dark:text-rose-300">
-              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-600 dark:text-rose-400" />
-              <div>
-                <p className="font-bold text-rose-800 dark:text-rose-200">Gangguan Sinkronisasi Cloud</p>
-                <p className="mt-0.5">{cloudSyncStatus.message}</p>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => void handlePullFromCloud()}
-              className="btn-tactile px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shrink-0 cursor-pointer"
-            >
-              Coba Sinkronkan Ulang
-            </button>
-          </div>
-        )}
-
         {/* Real-time KPI Stats Overview */}
         <StatCards
           racks={racks}
@@ -1287,20 +943,7 @@ export default function App() {
             <UserManagementTab
               currentSession={simagSession}
               users={simagUsers}
-              onUsersChange={(next) => {
-                latestSimagUsersRef.current = next;
-                setSimagUsers(next);
-              }}
-              onUserUpsert={(u) => {
-                if (currentUser) {
-                  runCloudPush(() => pushUpsertSimagUserToCloud(currentUser, u));
-                }
-              }}
-              onUserDelete={(userId) => {
-                if (currentUser) {
-                  runCloudPush(() => pushDeleteSimagUserFromCloud(userId));
-                }
-              }}
+              onUsersChange={setSimagUsers}
             />
           )}
         </div>
@@ -1396,14 +1039,7 @@ export default function App() {
         isOpen={isSheetsModalOpen}
         onClose={() => setIsSheetsModalOpen(false)}
         currentUser={currentUser}
-        hasSheetsToken={hasSheetsToken}
-        onUserChange={(user, hasToken) => {
-          setCurrentUser(user);
-          setHasSheetsToken(Boolean(hasToken));
-        }}
-        cloudSyncStatus={cloudSyncStatus}
-        onForceUploadCloud={handleForceUploadCloud}
-        onPullFromCloud={handlePullFromCloud}
+        onUserChange={setCurrentUser}
         lastSyncResult={lastSyncResult}
         autoSyncEnabled={autoSyncEnabled}
         onAutoSyncChange={setAutoSyncEnabled}

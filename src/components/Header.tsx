@@ -6,7 +6,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { User } from 'firebase/auth';
 import { SimagSession } from '../types/auth';
-import { CloudSyncStatus } from '../services/firestoreSync';
 import { 
   Zap, 
   Camera, 
@@ -25,8 +24,7 @@ import {
   Users,
   UserCheck,
   LogOut,
-  ShieldCheck,
-  Cloud
+  ShieldCheck
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -40,8 +38,6 @@ interface HeaderProps {
   onOpenNotifications: () => void;
   unreadAlertCount: number;
   currentUser: User | null;
-  hasSheetsToken?: boolean;
-  cloudSyncStatus?: CloudSyncStatus;
   autoSyncEnabled?: boolean;
   autoSyncStatus?: 'idle' | 'syncing' | 'synced' | 'error' | 'needs-reauth';
   onResetData: () => void;
@@ -62,8 +58,6 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenNotifications,
   unreadAlertCount,
   currentUser,
-  hasSheetsToken = false,
-  cloudSyncStatus,
   autoSyncEnabled = false,
   autoSyncStatus = 'idle',
   onResetData,
@@ -249,60 +243,40 @@ export const Header: React.FC<HeaderProps> = ({
             <span className="sm:hidden">Keluar</span>
           </button>
 
-          {/* Cloud Sync & Google Sheets Button */}
+          {/* Google Sheets Sync Button */}
           <button
             onClick={onOpenGoogleSheets}
             className={`btn-tactile px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 border cursor-pointer ${
               currentUser
-                ? cloudSyncStatus?.status === 'error'
-                  ? 'bg-rose-50 dark:bg-rose-950/50 border-rose-300 dark:border-rose-500/50 text-rose-700 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-900/60 shadow-sm'
-                  : 'bg-emerald-50 dark:bg-emerald-950/50 border-emerald-300 dark:border-emerald-500/50 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 shadow-sm'
-                : cloudSyncStatus?.status === 'connecting'
-                ? 'bg-cyan-50 dark:bg-cyan-950/40 border-cyan-300 dark:border-cyan-500/50 text-cyan-800 dark:text-cyan-300 hover:bg-cyan-100 dark:hover:bg-cyan-900/50 shadow-sm'
-                : 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-500/50 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/50 shadow-sm'
+                ? 'bg-emerald-50 dark:bg-emerald-950/50 border-emerald-300 dark:border-emerald-500/50 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 shadow-sm'
+                : autoSyncEnabled
+                ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-500/50 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/50 shadow-sm'
+                : 'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:border-slate-400 dark:hover:border-slate-600'
             }`}
-            title="Sinkronisasi Cloud Otomatis Dua Arah (Google AI Studio ⇄ Vercel) & Google Sheets"
+            title="Sinkronisasi Google Sheets"
           >
-            {(currentUser || cloudSyncStatus?.status === 'connecting') && (
+            {currentUser && autoSyncEnabled && (
               <span
                 className={`w-2 h-2 rounded-full shrink-0 ${
-                  autoSyncStatus === 'syncing' || cloudSyncStatus?.status === 'syncing' || cloudSyncStatus?.status === 'connecting'
+                  autoSyncStatus === 'syncing'
                     ? 'bg-cyan-500 animate-ping'
-                    : cloudSyncStatus?.status === 'error' || autoSyncStatus === 'error'
+                    : autoSyncStatus === 'error'
                     ? 'bg-rose-500'
                     : 'bg-emerald-500 dark:bg-emerald-400 animate-pulse'
                 }`}
               />
             )}
-            {currentUser ? (
-              hasSheetsToken ? (
-                <FileSpreadsheet className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-              ) : (
-                <Cloud className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-              )
-            ) : (
-              <Cloud
-                className={`w-4 h-4 ${
-                  cloudSyncStatus?.status === 'connecting'
-                    ? 'text-cyan-600 dark:text-cyan-400'
-                    : 'text-amber-600 dark:text-amber-400'
-                }`}
-              />
-            )}
+            <FileSpreadsheet className={`w-4 h-4 ${!currentUser && autoSyncEnabled ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}`} />
             <span className="hidden lg:inline">
               {currentUser
-                ? autoSyncStatus === 'syncing' || cloudSyncStatus?.status === 'syncing'
+                ? autoSyncStatus === 'syncing'
                   ? 'Menyinkronkan...'
-                  : cloudSyncStatus?.status === 'error'
-                  ? 'Gangguan Cloud'
-                  : cloudSyncStatus?.status === 'synced'
-                  ? hasSheetsToken && autoSyncEnabled
-                    ? 'Cloud & Sheets'
-                    : 'Cloud Otomatis'
-                  : 'Menghubungkan...'
-                : cloudSyncStatus?.status === 'connecting'
-                ? 'Menghubungkan...'
-                : 'Pengaturan Cloud'}
+                  : autoSyncEnabled
+                  ? 'Sheets Auto-Sync'
+                  : 'Sheets Terhubung'
+                : autoSyncEnabled
+                ? 'Hubungkan Sheets'
+                : 'Google Sheets'}
             </span>
           </button>
 

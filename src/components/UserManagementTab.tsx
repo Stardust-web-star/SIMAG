@@ -30,8 +30,6 @@ interface UserManagementTabProps {
   currentSession: SimagSession;
   users: SimagUser[];
   onUsersChange: (nextUsers: SimagUser[]) => void;
-  onUserUpsert?: (user: SimagUser) => void;
-  onUserDelete?: (userId: string) => void;
 }
 
 const ROLE_OPTIONS: SimagRole[] = [
@@ -45,8 +43,6 @@ export const UserManagementTab: React.FC<UserManagementTabProps> = ({
   currentSession,
   users,
   onUsersChange,
-  onUserUpsert,
-  onUserDelete,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState<'ALL' | SimagRole>('ALL');
@@ -147,9 +143,6 @@ export const UserManagementTab: React.FC<UserManagementTabProps> = ({
     }
 
     onUsersChange(res.users);
-    if (onUserUpsert) {
-      onUserUpsert(res.created);
-    }
     setIsAddOpen(false);
     setFeedback({
       type: 'success',
@@ -182,10 +175,6 @@ export const UserManagementTab: React.FC<UserManagementTabProps> = ({
     }
 
     onUsersChange(res.users);
-    const updatedUser = res.users.find(u => u.id === passwordTarget.id);
-    if (updatedUser && onUserUpsert) {
-      onUserUpsert(updatedUser);
-    }
     setFeedback({
       type: 'success',
       message: `Password untuk NIP ${passwordTarget.nip} berhasil diperbarui.`,
@@ -204,9 +193,6 @@ export const UserManagementTab: React.FC<UserManagementTabProps> = ({
     }
 
     onUsersChange(res.users);
-    if (onUserDelete) {
-      onUserDelete(deleteTarget.id);
-    }
     setFeedback({
       type: 'success',
       message: `User NIP ${deleteTarget.nip} (${deleteTarget.nama}) berhasil dihapus.`,

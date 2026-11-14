@@ -253,8 +253,7 @@ export const InboundCartonModal: React.FC<InboundCartonModalProps> = ({
       return;
     }
 
-    const brandCode = resolvedBrand.replace(/[^A-Za-z0-9]/g, '').slice(0, 3).toUpperCase() || 'KWH';
-    const cartonId = `CTN-${brandCode}-${Date.now().toString().slice(-4)}`;
+    const cartonId = `CTN-${resolvedBrand.slice(0, 3).toUpperCase() || 'KWH'}-${Date.now().toString().slice(-4)}`;
     const nowStr = new Date().toISOString().replace('T', ' ').slice(0, 16);
 
     const newCarton: InboundCarton = {
