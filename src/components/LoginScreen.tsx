@@ -312,7 +312,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
           <div className="mt-8 pt-4 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500 dark:text-slate-400">
             <span className="inline-flex items-center gap-1.5 font-medium">
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-              <span>Enkripsi Terproteksi · Auto-Logout 5 Menit</span>
+              <span>Enkripsi Terproteksi · Auto-Logout 5 Menit &amp; Tutup Tab</span>
             </span>
             <span className="font-mono tabular-nums">PLN ULP Baguala • 2026</span>
           </div>

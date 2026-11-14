@@ -193,7 +193,8 @@ export function authenticateSimagUser(
     loginAt: nowIso,
     lastActivityAt: Date.now(),
   };
-  localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+  localStorage.removeItem(SESSION_STORAGE_KEY);
+  sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
 
   return { ok: true, session, users: updatedUsers };
 }
@@ -202,7 +203,10 @@ export function getActiveSimagSession(): {
   session: SimagSession | null;
   expiredByInactivity: boolean;
 } {
-  const raw = localStorage.getItem(SESSION_STORAGE_KEY);
+  // Ensure any legacy localStorage session is cleared so closing a tab always logs out
+  localStorage.removeItem(SESSION_STORAGE_KEY);
+
+  const raw = sessionStorage.getItem(SESSION_STORAGE_KEY);
   if (!raw) {
     return { session: null, expiredByInactivity: false };
   }
@@ -210,7 +214,7 @@ export function getActiveSimagSession(): {
   try {
     const parsed: SimagSession = JSON.parse(raw);
     if (!parsed?.userId || !parsed?.nip || typeof parsed.lastActivityAt !== 'number') {
-      localStorage.removeItem(SESSION_STORAGE_KEY);
+      sessionStorage.removeItem(SESSION_STORAGE_KEY);
       return { session: null, expiredByInactivity: false };
     }
 
@@ -218,12 +222,12 @@ export function getActiveSimagSession(): {
     const users = ensureSeededUsers();
     const stillExists = users.find(u => u.id === parsed.userId);
     if (!stillExists) {
-      localStorage.removeItem(SESSION_STORAGE_KEY);
+      sessionStorage.removeItem(SESSION_STORAGE_KEY);
       return { session: null, expiredByInactivity: false };
     }
 
     if (Date.now() - parsed.lastActivityAt >= INACTIVITY_TIMEOUT_MS) {
-      localStorage.removeItem(SESSION_STORAGE_KEY);
+      sessionStorage.removeItem(SESSION_STORAGE_KEY);
       return { session: null, expiredByInactivity: true };
     }
 
@@ -235,24 +239,25 @@ export function getActiveSimagSession(): {
     };
     return { session: syncedSession, expiredByInactivity: false };
   } catch {
-    localStorage.removeItem(SESSION_STORAGE_KEY);
+    sessionStorage.removeItem(SESSION_STORAGE_KEY);
     return { session: null, expiredByInactivity: false };
   }
 }
 
 export function touchSimagSessionActivity(timestamp = Date.now()): void {
-  const raw = localStorage.getItem(SESSION_STORAGE_KEY);
+  const raw = sessionStorage.getItem(SESSION_STORAGE_KEY);
   if (!raw) return;
   try {
     const parsed: SimagSession = JSON.parse(raw);
     parsed.lastActivityAt = timestamp;
-    localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(parsed));
+    sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(parsed));
   } catch {
     // Ignore malformed session
   }
 }
 
 export function logoutSimagSession(): void {
+  sessionStorage.removeItem(SESSION_STORAGE_KEY);
   localStorage.removeItem(SESSION_STORAGE_KEY);
 }
 
