@@ -121,6 +121,13 @@ function saveUsers(users: SimagUser[]): void {
   localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
 }
 
+export function overwriteLocalSimagUsers(users: SimagUser[]): void {
+  if (Array.isArray(users) && users.length > 0) {
+    saveUsers(users);
+    localStorage.setItem(SEEDED_FLAG_KEY, 'true');
+  }
+}
+
 export function ensureSeededUsers(): SimagUser[] {
   const alreadySeeded = localStorage.getItem(SEEDED_FLAG_KEY) === 'true';
   const raw = localStorage.getItem(USERS_STORAGE_KEY);

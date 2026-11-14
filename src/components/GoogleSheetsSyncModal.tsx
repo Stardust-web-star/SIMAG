@@ -14,6 +14,7 @@ import {
   findOrCreateWarehouseSpreadsheet, 
   GoogleSheetsSyncResult 
 } from '../services/googleSheets';
+import { CloudSyncStatus } from '../services/firestoreSync';
 import { 
   X, 
   FileSpreadsheet, 
@@ -24,14 +25,19 @@ import {
   LogOut, 
   Check,
   Copy,
-  Zap
+  Zap,
+  Cloud,
+  UploadCloud
 } from 'lucide-react';
 
 interface GoogleSheetsSyncModalProps {
   isOpen: boolean;
   onClose: () => void;
   currentUser: User | null;
-  onUserChange: (user: User | null) => void;
+  hasSheetsToken: boolean;
+  onUserChange: (user: User | null, hasToken?: boolean) => void;
+  cloudSyncStatus: CloudSyncStatus;
+  onForceUploadCloud: () => Promise<void>;
   lastSyncResult: GoogleSheetsSyncResult | null;
   autoSyncEnabled: boolean;
   onAutoSyncChange: (enabled: boolean) => void;
@@ -47,7 +53,10 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
   isOpen,
   onClose,
   currentUser,
+  hasSheetsToken,
   onUserChange,
+  cloudSyncStatus,
+  onForceUploadCloud,
   lastSyncResult,
   autoSyncEnabled,
   onAutoSyncChange,
@@ -56,6 +65,7 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
 }) => {
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isUploadingCloud, setIsUploadingCloud] = useState(false);
   const [isOpeningSheet, setIsOpeningSheet] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -75,9 +85,9 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
     }
   }, [lastSyncResult]);
 
-  // Auto-discover existing spreadsheet if logged in
+  // Auto-discover existing spreadsheet if logged in & Sheets token cached
   useEffect(() => {
-    if (currentUser && !spreadsheetInfo) {
+    if (currentUser && hasSheetsToken && !spreadsheetInfo) {
       getAccessToken().then(token => {
         if (token) {
           findOrCreateWarehouseSpreadsheet()
@@ -88,7 +98,7 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
         }
       });
     }
-  }, [currentUser, spreadsheetInfo]);
+  }, [currentUser, hasSheetsToken, spreadsheetInfo]);
 
   // Reset transient confirmations when modal closes
   useEffect(() => {
@@ -101,6 +111,10 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
 
   const handleOpenSpreadsheet = async () => {
     setErrorMsg(null);
+    if (!hasSheetsToken) {
+      setErrorMsg('Klik "Aktifkan Izin Google Sheets" terlebih dahulu agar aplikasi dapat membuka Spreadsheet di sesi browser ini.');
+      return;
+    }
     try {
       let target = spreadsheetInfo;
       if (!target) {
@@ -138,7 +152,7 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
     try {
       const res = await googleSignIn();
       if (res) {
-        onUserChange(res.user);
+        onUserChange(res.user, true);
         const info = await findOrCreateWarehouseSpreadsheet().catch(() => null);
         if (info) {
           setSpreadsheetInfo(info);
@@ -149,16 +163,16 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
           try {
             const syncRes = await onTriggerSyncNow('Rekap otomatis saat terhubung', info?.id);
             if (syncRes) {
-              setSuccessMsg(`Terhubung sebagai ${res.user.email} & data langsung disinkronkan pada ${syncRes.updatedAt}!`);
+              setSuccessMsg(`Terhubung sebagai ${res.user.email}. Sinkronisasi Cloud Dua Arah & Google Sheets aktif (${syncRes.updatedAt})!`);
             } else {
-              setSuccessMsg(`Berhasil terhubung dengan Google (${res.user.email}).`);
+              setSuccessMsg(`Berhasil terhubung dengan Google (${res.user.email}). Sinkronisasi Cloud Dua Arah aktif!`);
             }
           } finally {
             setIsSyncing(false);
           }
         } else {
           setConfirmAction('enable-auto-sync');
-          setSuccessMsg(`Berhasil terhubung dengan Google (${res.user.email}).`);
+          setSuccessMsg(`Berhasil terhubung dengan Google (${res.user.email}). Sinkronisasi Cloud Dua Arah aktif!`);
         }
       }
     } catch (err: any) {
@@ -168,9 +182,23 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
     }
   };
 
+  const handleForceUploadCloud = async () => {
+    setErrorMsg(null);
+    setSuccessMsg(null);
+    setIsUploadingCloud(true);
+    try {
+      await onForceUploadCloud();
+      setSuccessMsg('Data gudang lokal berhasil diunggah ke Cloud dan disinkronkan dua arah (Google AI Studio ⇄ Vercel).');
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Gagal mengunggah data lokal ke Cloud.');
+    } finally {
+      setIsUploadingCloud(false);
+    }
+  };
+
   const handleLogout = async () => {
     await logout();
-    onUserChange(null);
+    onUserChange(null, false);
     setSpreadsheetInfo(null);
     setSuccessMsg(null);
     setConfirmAction(null);
@@ -180,6 +208,10 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
     setErrorMsg(null);
     setSuccessMsg(null);
     setConfirmAction(null);
+    if (!hasSheetsToken) {
+      setErrorMsg('Sesi akses Google Sheets berakhir setelah refresh halaman. Silakan klik "Aktifkan Izin Google Sheets" terlebih dahulu.');
+      return;
+    }
     setIsSyncing(true);
     try {
       let targetSpreadsheet = spreadsheetInfo;
@@ -229,9 +261,9 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
               <FileSpreadsheet className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-bold text-slate-900 dark:text-white text-base">Sinkronisasi Google Sheets</h3>
+              <h3 className="font-bold text-slate-900 dark:text-white text-base">Sinkronisasi Cloud & Google Sheets</h3>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Pembaruan data stok, transaksi & rak ke spreadsheet tim secara real-time
+                Sinkronisasi dua arah Google AI Studio ⇄ Vercel & rekap otomatis Google Sheets
               </p>
             </div>
           </div>
@@ -248,7 +280,7 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
           {errorMsg && (
             <div className="p-3 bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/30 rounded-xl text-xs text-rose-700 dark:text-rose-300 flex items-start gap-2">
               <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
-              <span>{errorMsg}</span>
+              <span className="leading-relaxed">{errorMsg}</span>
             </div>
           )}
 
@@ -263,12 +295,12 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
           {!currentUser ? (
             <div className="text-center py-6 px-4 bg-slate-50 dark:bg-slate-950/60 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-4">
               <div className="w-12 h-12 rounded-full bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mx-auto">
-                <FileSpreadsheet className="w-6 h-6" />
+                <Cloud className="w-6 h-6" />
               </div>
               <div>
                 <h4 className="text-sm font-bold text-slate-900 dark:text-white">Hubungkan Akun Google Anda</h4>
                 <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto mt-1">
-                  Masuk dengan akun Google untuk menyinkronkan data stok kWh meter gudang langsung ke Google Spreadsheet secara otomatis setiap ada barang masuk atau keluar.
+                  Masuk dengan akun Google yang sama di Google AI Studio dan Vercel agar stok kWh meter, nama rak, transaksi, dan user tersinkron dua arah secara real-time serta terekap ke Google Spreadsheet.
                 </p>
               </div>
 
@@ -335,6 +367,81 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
                   <LogOut className="w-4 h-4" />
                 </button>
               </div>
+
+              {/* Two-Way Cloud Sync Status Card */}
+              <div className={`p-3.5 rounded-xl border space-y-2.5 ${
+                cloudSyncStatus.status === 'error'
+                  ? 'bg-rose-50/70 dark:bg-rose-950/20 border-rose-200 dark:border-rose-500/40'
+                  : 'bg-cyan-50/60 dark:bg-cyan-950/20 border-cyan-200 dark:border-cyan-500/40'
+              }`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-2.5">
+                    <div className={`p-2 rounded-lg shrink-0 ${
+                      cloudSyncStatus.status === 'error'
+                        ? 'bg-rose-100 dark:bg-rose-500/20 text-rose-600 dark:text-rose-400'
+                        : 'bg-cyan-100 dark:bg-cyan-500/20 text-cyan-600 dark:text-cyan-400'
+                    }`}>
+                      <Cloud className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-2 flex-wrap">
+                        <span>Cloud Sync Dua Arah (AI Studio ⇄ Vercel)</span>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
+                          cloudSyncStatus.status === 'synced'
+                            ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-500/40'
+                            : cloudSyncStatus.status === 'error'
+                            ? 'bg-rose-100 dark:bg-rose-500/20 text-rose-700 dark:text-rose-300'
+                            : 'bg-cyan-100 dark:bg-cyan-500/20 text-cyan-700 dark:text-cyan-300'
+                        }`}>
+                          {cloudSyncStatus.status === 'synced'
+                            ? 'AKTIF REAL-TIME'
+                            : cloudSyncStatus.status === 'syncing' || cloudSyncStatus.status === 'connecting'
+                            ? 'MENYINKRONKAN'
+                            : cloudSyncStatus.status === 'error'
+                            ? 'ERROR'
+                            : 'MENUNGGU'}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">
+                        {cloudSyncStatus.message || 'Setiap update stok, rak, transaksi & user tersinkron otomatis ke semua domain.'}
+                        {cloudSyncStatus.lastSyncedAt ? ` · Update terakhir: ${cloudSyncStatus.lastSyncedAt}` : ''}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end">
+                  <button
+                    type="button"
+                    disabled={isUploadingCloud}
+                    onClick={handleForceUploadCloud}
+                    className="btn-tactile px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white rounded-lg text-[11px] font-semibold inline-flex items-center gap-1.5 shadow-xs cursor-pointer"
+                  >
+                    <UploadCloud className={`w-3.5 h-3.5 ${isUploadingCloud ? 'animate-pulse' : ''}`} />
+                    <span>{isUploadingCloud ? 'Mengunggah...' : 'Paksa Upload Data Browser Ini ke Cloud'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Sheets OAuth Re-authorization notice when Firebase user persisted across page reload */}
+              {!hasSheetsToken && (
+                <div className="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-500/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="text-xs text-amber-800 dark:text-amber-200">
+                    <div className="font-bold">Sesi Google Sheets Perlu Diaktifkan Ulang</div>
+                    <p className="text-[11px] text-amber-700 dark:text-amber-300 mt-0.5">
+                      Sinkronisasi Cloud AI Studio ⇄ Vercel tetap aktif, namun izin penulisan Google Sheets perlu otorisasi ulang setelah halaman dimuat ulang.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleGoogleLogin}
+                    disabled={isSigningIn}
+                    className="btn-tactile px-3.5 py-2 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white rounded-lg text-xs font-bold whitespace-nowrap cursor-pointer"
+                  >
+                    {isSigningIn ? 'Menghubungkan...' : 'Aktifkan Izin Sheets'}
+                  </button>
+                </div>
+              )}
 
               {/* Explicit Confirmation Dialog for Enabling Auto-Sync or Manual Sheet Mutation */}
               {confirmAction && (

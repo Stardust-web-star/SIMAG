@@ -17,8 +17,25 @@ import {
 } from './data/initialData';
 import { 
   initAuth,
-  getAccessToken
+  getAccessToken,
+  hasCachedSheetsToken,
+  clearAccessToken
 } from './services/googleAuth';
+import {
+  bootstrapAndSubscribeWarehouse,
+  forceUploadLocalToCloud,
+  pushInboundToCloud,
+  pushAddUnitsToCartonToCloud,
+  pushUpdateCartonBrandToCloud,
+  pushOutboundToCloud,
+  pushMoveCartonToCloud,
+  pushUpdateRackToCloud,
+  pushResetWarehouseToCloud,
+  pushUpsertSimagUserToCloud,
+  pushDeleteSimagUserFromCloud,
+  pushSimagUserLoginTimeToCloud,
+  CloudSyncStatus,
+} from './services/firestoreSync';
 import { 
   findOrCreateWarehouseSpreadsheet,
   syncWarehouseToGoogleSheets,
@@ -53,9 +70,10 @@ import {
   getActiveSimagSession,
   logoutSimagSession,
   touchSimagSessionActivity,
+  overwriteLocalSimagUsers,
 } from './services/simagAuthService';
 import { hardwareScannerService } from './services/hardwareScannerService';
-import { Zap, X, Camera, Plus, Send, FileSpreadsheet, RefreshCw, CheckCircle2, AlertCircle, ExternalLink, Clock } from 'lucide-react';
+import { Zap, X, Camera, Plus, Send, FileSpreadsheet, RefreshCw, CheckCircle2, AlertCircle, ExternalLink, Clock, Cloud } from 'lucide-react';
 
 export default function App() {
   // Theme (Light Mode & Dark Mode)
@@ -156,8 +174,11 @@ export default function App() {
   // Alerts
   const [alerts, setAlerts] = useState<StockAlert[]>(() => []);
 
-  // Google Auth & Sheets State
+  // Google Auth, Two-Way Cloud Sync & Sheets State
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [hasSheetsToken, setHasSheetsToken] = useState<boolean>(() => hasCachedSheetsToken());
+  const [cloudSyncStatus, setCloudSyncStatus] = useState<CloudSyncStatus>({ status: 'disconnected' });
+  const [isCloudBannerDismissed, setIsCloudBannerDismissed] = useState(false);
   const [lastSyncResult, setLastSyncResult] = useState<GoogleSheetsSyncResult | null>(() => {
     const saved = localStorage.getItem('pln_sheets_last_sync');
     return saved ? JSON.parse(saved) : null;
@@ -179,6 +200,8 @@ export default function App() {
 
   const latestSnapshotRef = useRef({ racks, cartons, meters, outbounds });
   latestSnapshotRef.current = { racks, cartons, meters, outbounds };
+  const latestSimagUsersRef = useRef<SimagUser[]>(simagUsers);
+  latestSimagUsersRef.current = simagUsers;
 
   const lastSpreadsheetIdRef = useRef<string | null>(lastSyncResult?.spreadsheetId || null);
   const syncInFlightRef = useRef(false);
@@ -336,7 +359,8 @@ export default function App() {
       return result;
     } catch (err: any) {
       if (err instanceof GoogleSheetsAuthError) {
-        setCurrentUser(null);
+        clearAccessToken();
+        setHasSheetsToken(false);
         setAutoSyncState({
           status: 'needs-reauth',
           message: err.message,
@@ -370,6 +394,32 @@ export default function App() {
       }
     }
   }, [showSyncToast]);
+
+  const runCloudPush = useCallback((task: () => Promise<void>) => {
+    task().catch((err) => {
+      const msg = err instanceof Error ? err.message : 'Gagal menyimpan pembaruan ke Cloud.';
+      setCloudSyncStatus({ status: 'error', message: msg });
+    });
+  }, []);
+
+  const handleForceUploadCloud = useCallback(async () => {
+    if (!currentUser) return;
+    setCloudSyncStatus({ status: 'syncing', message: 'Mengunggah data browser ini ke Cloud...' });
+    await forceUploadLocalToCloud(currentUser, {
+      ...latestSnapshotRef.current,
+      simagUsers: latestSimagUsersRef.current,
+    });
+    const nowTime = new Date().toLocaleTimeString('id-ID', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+    setCloudSyncStatus({
+      status: 'synced',
+      message: 'Sinkronisasi dua arah aktif (Google AI Studio ⇄ Vercel)',
+      lastSyncedAt: nowTime,
+    });
+  }, [currentUser]);
 
   const handleSimagLogout = useCallback((expiredMessage?: string) => {
     logoutSimagSession();
@@ -505,17 +555,80 @@ export default function App() {
   // Initialize Firebase Google Auth listener
   useEffect(() => {
     const unsubscribe = initAuth(
-      (user) => {
+      (user, hasToken) => {
         setCurrentUser(user);
+        setHasSheetsToken(hasToken);
       },
       () => {
         setCurrentUser(null);
+        setHasSheetsToken(false);
+        setCloudSyncStatus({ status: 'disconnected' });
       }
     );
     return () => {
       if (unsubscribe) unsubscribe();
     };
   }, []);
+
+  // Two-way Real-Time Cloud Sync (Google AI Studio <-> Vercel via Firestore)
+  useEffect(() => {
+    if (!currentUser) {
+      setCloudSyncStatus({ status: 'disconnected' });
+      return;
+    }
+
+    let isCancelled = false;
+    let unsubCloud: (() => void) | undefined;
+
+    bootstrapAndSubscribeWarehouse(
+      currentUser,
+      () => ({
+        ...latestSnapshotRef.current,
+        simagUsers: latestSimagUsersRef.current,
+      }),
+      (payload) => {
+        if (isCancelled) return;
+        latestSnapshotRef.current = {
+          racks: payload.racks,
+          cartons: payload.cartons,
+          meters: payload.meters,
+          outbounds: payload.outbounds,
+        };
+        latestSimagUsersRef.current = payload.simagUsers;
+        setRacks(payload.racks);
+        setCartons(payload.cartons);
+        setMeters(payload.meters);
+        setOutbounds(payload.outbounds);
+        setSimagUsers(payload.simagUsers);
+        overwriteLocalSimagUsers(payload.simagUsers);
+      },
+      (status) => {
+        if (!isCancelled) {
+          setCloudSyncStatus(status);
+        }
+      }
+    )
+      .then((unsub) => {
+        if (isCancelled) {
+          unsub();
+        } else {
+          unsubCloud = unsub;
+        }
+      })
+      .catch((err) => {
+        if (!isCancelled) {
+          setCloudSyncStatus({
+            status: 'error',
+            message: err instanceof Error ? err.message : 'Gagal menghubungkan Cloud Sync dua arah.',
+          });
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+      if (unsubCloud) unsubCloud();
+    };
+  }, [currentUser]);
 
   // Global Escape key listener to close any active modal cleanly
   useEffect(() => {
@@ -591,6 +704,11 @@ export default function App() {
     setCartons(nextCartons);
     setMeters(nextMeters);
 
+    if (currentUser) {
+      const updatedRack = nextRacks.find(r => r.id === newCarton.rackId);
+      runCloudPush(() => pushInboundToCloud(currentUser, newCarton, newUnits, updatedRack));
+    }
+
     // Send push notification
     sendBrowserPushNotification(
       'Material Inbound Berhasil',
@@ -628,6 +746,13 @@ export default function App() {
 
     setCartons(nextCartons);
     setMeters(nextMeters);
+
+    if (currentUser) {
+      const updatedCarton = nextCartons.find(c => c.id === cartonId);
+      if (updatedCarton) {
+        runCloudPush(() => pushAddUnitsToCartonToCloud(currentUser, updatedCarton, newUnits));
+      }
+    }
 
     soundEffects.playSuccess();
     vibratePhone([100, 50, 100]);
@@ -670,6 +795,16 @@ export default function App() {
     setCartons(nextCartons);
     setMeters(nextMeters);
 
+    if (currentUser) {
+      const updatedCarton = nextCartons.find(c => c.id === cartonId);
+      const updatedMeters = nextMeters.filter(
+        m => m.cartonBarcode === targetCarton.cartonBarcode || serialSet.has(m.serialNumber)
+      );
+      if (updatedCarton) {
+        runCloudPush(() => pushUpdateCartonBrandToCloud(currentUser, updatedCarton, updatedMeters));
+      }
+    }
+
     soundEffects.playSuccess();
     vibratePhone();
     sendBrowserPushNotification(
@@ -705,6 +840,11 @@ export default function App() {
 
     setMeters(nextMeters);
     setOutbounds(nextOutbounds);
+
+    if (currentUser) {
+      const updatedMeter = nextMeters.find(m => m.serialNumber === record.snKwhMeter);
+      runCloudPush(() => pushOutboundToCloud(currentUser, record, updatedMeter));
+    }
 
     // Send push notification
     const actionDesc = record.jenisTransaksi === 'PB' 
@@ -779,6 +919,15 @@ export default function App() {
     setMeters(nextMeters);
     setRacks(nextRacks);
 
+    if (currentUser) {
+      const updatedCarton = nextCartons.find(c => c.id === cartonId);
+      const updatedMeters = nextMeters.filter(m => m.cartonBarcode === carton.cartonBarcode);
+      const affectedRacks = nextRacks.filter(r => r.id === carton.rackId || r.id === targetRackId);
+      if (updatedCarton) {
+        runCloudPush(() => pushMoveCartonToCloud(currentUser, updatedCarton, updatedMeters, affectedRacks));
+      }
+    }
+
     soundEffects.playScanSuccess();
     vibratePhone();
 
@@ -797,6 +946,9 @@ export default function App() {
     };
     setRacks(nextRacks);
     localStorage.setItem('pln_warehouse_racks', JSON.stringify(nextRacks));
+    if (currentUser) {
+      runCloudPush(() => pushUpdateRackToCloud(currentUser, updatedRack));
+    }
     soundEffects.playSuccess();
     sendBrowserPushNotification(
       'Nama Rak Berhasil Diperbarui',
@@ -811,6 +963,11 @@ export default function App() {
   // Reset to clean state for real warehouse logging
   const handleResetData = () => {
     if (window.confirm('Kosongkan semua data stok kWh meter? Data akan di-reset ke 0 untuk memulai pendataan riil gudang PLN.')) {
+      const prevSnap = latestSnapshotRef.current;
+      const prevCartonIds = prevSnap.cartons.map(c => c.id);
+      const prevMeterSns = prevSnap.meters.map(m => m.serialNumber);
+      const prevOutboundIds = prevSnap.outbounds.map(o => o.id);
+
       latestSnapshotRef.current = {
         racks: INITIAL_RACKS,
         cartons: [],
@@ -827,6 +984,17 @@ export default function App() {
       localStorage.setItem('pln_warehouse_cartons', JSON.stringify([]));
       localStorage.setItem('pln_warehouse_meters', JSON.stringify([]));
       localStorage.setItem('pln_warehouse_outbounds', JSON.stringify([]));
+      if (currentUser) {
+        runCloudPush(() =>
+          pushResetWarehouseToCloud(
+            currentUser,
+            INITIAL_RACKS,
+            prevCartonIds,
+            prevMeterSns,
+            prevOutboundIds
+          )
+        );
+      }
       soundEffects.playSuccess();
     }
   };
@@ -837,11 +1005,18 @@ export default function App() {
         onLoginSuccess={(session, updatedUsers) => {
           lastActivityAtRef.current = session.lastActivityAt;
           lastTouchPersistRef.current = Date.now();
+          latestSimagUsersRef.current = updatedUsers;
           setSimagUsers(updatedUsers);
           setSimagSession(session);
           setLoginNotice(null);
           setIdleWarningSeconds(null);
           setActiveTab('racks');
+          if (currentUser) {
+            const loggedUser = updatedUsers.find(u => u.id === session.userId);
+            if (loggedUser) {
+              void pushSimagUserLoginTimeToCloud(currentUser, loggedUser);
+            }
+          }
         }}
         inactivityNotice={loginNotice}
         onDismissNotice={() => setLoginNotice(null)}
@@ -871,6 +1046,8 @@ export default function App() {
         onOpenNotifications={() => setIsNotificationsOpen(true)}
         unreadAlertCount={alerts.length}
         currentUser={currentUser}
+        hasSheetsToken={hasSheetsToken}
+        cloudSyncStatus={cloudSyncStatus}
         autoSyncEnabled={autoSyncEnabled}
         autoSyncStatus={autoSyncState.status}
         onResetData={handleResetData}
@@ -882,6 +1059,42 @@ export default function App() {
 
       {/* Main Body Content */}
       <main className="flex-1 max-w-7xl w-full min-w-0 mx-auto px-3 sm:px-6 py-5 pb-24 sm:pb-6 space-y-6">
+        {/* Cloud Two-Way Sync Prompt Banner when not connected yet */}
+        {!currentUser && !isCloudBannerDismissed && (
+          <div className="p-3.5 sm:px-4 rounded-2xl bg-cyan-50 dark:bg-cyan-950/30 border border-cyan-300 dark:border-cyan-500/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-start sm:items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-cyan-100 dark:bg-cyan-500/20 border border-cyan-200 dark:border-cyan-500/30 text-cyan-700 dark:text-cyan-300 flex items-center justify-center shrink-0">
+                <Cloud className="w-4 h-4" />
+              </div>
+              <div>
+                <p className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
+                  Aktifkan Sinkronisasi Cloud Dua Arah (Google AI Studio ⇄ Vercel)
+                </p>
+                <p className="text-[11px] sm:text-xs text-slate-600 dark:text-slate-300">
+                  Data di browser ini masih tersimpan lokal. Hubungkan akun Google Anda agar stok, nama rak & transaksi antara Google AI Studio dan Vercel selalu sama secara real-time.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+              <button
+                type="button"
+                onClick={() => setIsSheetsModalOpen(true)}
+                className="btn-tactile px-3.5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold shadow-xs cursor-pointer"
+              >
+                Hubungkan Cloud Sekarang
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsCloudBannerDismissed(true)}
+                className="p-1.5 rounded-lg text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white hover:bg-cyan-100/70 dark:hover:bg-slate-800 cursor-pointer"
+                title="Tutup sementara"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Real-time KPI Stats Overview */}
         <StatCards
           racks={racks}
@@ -943,7 +1156,20 @@ export default function App() {
             <UserManagementTab
               currentSession={simagSession}
               users={simagUsers}
-              onUsersChange={setSimagUsers}
+              onUsersChange={(next) => {
+                latestSimagUsersRef.current = next;
+                setSimagUsers(next);
+              }}
+              onUserUpsert={(u) => {
+                if (currentUser) {
+                  runCloudPush(() => pushUpsertSimagUserToCloud(currentUser, u));
+                }
+              }}
+              onUserDelete={(userId) => {
+                if (currentUser) {
+                  runCloudPush(() => pushDeleteSimagUserFromCloud(userId));
+                }
+              }}
             />
           )}
         </div>
@@ -1039,7 +1265,13 @@ export default function App() {
         isOpen={isSheetsModalOpen}
         onClose={() => setIsSheetsModalOpen(false)}
         currentUser={currentUser}
-        onUserChange={setCurrentUser}
+        hasSheetsToken={hasSheetsToken}
+        onUserChange={(user, hasToken) => {
+          setCurrentUser(user);
+          setHasSheetsToken(Boolean(hasToken));
+        }}
+        cloudSyncStatus={cloudSyncStatus}
+        onForceUploadCloud={handleForceUploadCloud}
         lastSyncResult={lastSyncResult}
         autoSyncEnabled={autoSyncEnabled}
         onAutoSyncChange={setAutoSyncEnabled}

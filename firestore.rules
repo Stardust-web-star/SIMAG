@@ -1,0 +1,296 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Global Safety Net (Default Deny)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 2. Global Hardened Primitives
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedEmail() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isAdmin() {
+      return isVerifiedEmail() && request.auth.token.email == 'fikiilham56@gmail.com';
+    }
+
+    function isOwnerOrAdmin(data) {
+      return isVerifiedEmail() && (isAdmin() || data.ownerUid == request.auth.uid);
+    }
+
+    // 3. Entity Validation Blueprints
+    function isValidWarehouseMeta(data) {
+      return data.keys().hasAll(['initialized', 'resetVersion', 'ownerUid', 'serverCreatedAt', 'serverUpdatedAt']) &&
+        data.keys().hasOnly(['initialized', 'resetVersion', 'ownerUid', 'updatedBy', 'serverCreatedAt', 'serverUpdatedAt']) &&
+        data.initialized is bool &&
+        data.resetVersion is number &&
+        data.resetVersion >= 0 &&
+        isValidId(data.ownerUid) &&
+        (!('updatedBy' in data) || (data.updatedBy is string && data.updatedBy.size() <= 120)) &&
+        data.serverCreatedAt is timestamp &&
+        data.serverUpdatedAt is timestamp;
+    }
+
+    function isValidWarehouseRack(data) {
+      return data.keys().hasAll(['id', 'name', 'zone', 'primaryBrand', 'shelves', 'ownerUid', 'serverCreatedAt', 'serverUpdatedAt']) &&
+        data.keys().hasOnly(['id', 'name', 'zone', 'primaryBrand', 'brandColor', 'shelves', 'ownerUid', 'serverCreatedAt', 'serverUpdatedAt']) &&
+        isValidId(data.id) &&
+        data.name is string && data.name.size() >= 1 && data.name.size() <= 120 &&
+        data.zone is string && data.zone.size() >= 1 && data.zone.size() <= 120 &&
+        data.primaryBrand is string && data.primaryBrand.size() >= 1 && data.primaryBrand.size() <= 100 &&
+        (!('brandColor' in data) || (data.brandColor is string && data.brandColor.size() <= 32)) &&
+        data.shelves is list && data.shelves.size() >= 1 && data.shelves.size() <= 8 && data.shelves[0] is map &&
+        isValidId(data.ownerUid) &&
+        data.serverCreatedAt is timestamp &&
+        data.serverUpdatedAt is timestamp;
+    }
+
+    function isValidInboundCarton(data) {
+      return data.keys().hasAll([
+          'id', 'cartonBarcode', 'brand', 'phase', 'category',
+          'unitsCount', 'meterSerials', 'rackId', 'shelfLevel',
+          'dateInbound', 'receivedBy', 'ownerUid', 'serverCreatedAt', 'serverUpdatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'id', 'cartonBarcode', 'brand', 'phase', 'category',
+          'unitsCount', 'meterSerials', 'rackId', 'shelfLevel',
+          'dateInbound', 'receivedBy', 'notes', 'ownerUid', 'serverCreatedAt', 'serverUpdatedAt'
+        ]) &&
+        isValidId(data.id) &&
+        data.cartonBarcode is string && data.cartonBarcode.size() >= 1 && data.cartonBarcode.size() <= 128 &&
+        data.brand is string && data.brand.size() >= 1 && data.brand.size() <= 100 &&
+        data.phase in ['1 Phasa', '3 Phasa'] &&
+        data.category is string && data.category.size() >= 1 && data.category.size() <= 80 &&
+        data.unitsCount is number && data.unitsCount >= 0 && data.unitsCount <= 100 &&
+        data.meterSerials is list && data.meterSerials.size() <= 100 &&
+        (data.meterSerials.size() == 0 || data.meterSerials[0] is string) &&
+        data.rackId is string && data.rackId.size() >= 1 && data.rackId.size() <= 64 &&
+        data.shelfLevel is number && data.shelfLevel >= 1 && data.shelfLevel <= 10 &&
+        data.dateInbound is string && data.dateInbound.size() >= 1 && data.dateInbound.size() <= 64 &&
+        data.receivedBy is string && data.receivedBy.size() >= 1 && data.receivedBy.size() <= 120 &&
+        (!('notes' in data) || (data.notes is string && data.notes.size() <= 500)) &&
+        isValidId(data.ownerUid) &&
+        data.serverCreatedAt is timestamp &&
+        data.serverUpdatedAt is timestamp;
+    }
+
+    function isValidMeterUnit(data) {
+      return data.keys().hasAll([
+          'serialNumber', 'brand', 'phase', 'category', 'cartonBarcode',
+          'rackId', 'shelfLevel', 'dateInbound', 'status', 'ownerUid',
+          'serverCreatedAt', 'serverUpdatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'serialNumber', 'brand', 'phase', 'category', 'cartonBarcode',
+          'rackId', 'shelfLevel', 'dateInbound', 'status', 'dispatchId',
+          'ownerUid', 'serverCreatedAt', 'serverUpdatedAt'
+        ]) &&
+        data.serialNumber is string && data.serialNumber.size() >= 1 && data.serialNumber.size() <= 128 &&
+        data.brand is string && data.brand.size() >= 1 && data.brand.size() <= 100 &&
+        data.phase in ['1 Phasa', '3 Phasa'] &&
+        data.category is string && data.category.size() >= 1 && data.category.size() <= 80 &&
+        data.cartonBarcode is string && data.cartonBarcode.size() >= 1 && data.cartonBarcode.size() <= 128 &&
+        data.rackId is string && data.rackId.size() >= 1 && data.rackId.size() <= 64 &&
+        data.shelfLevel is number && data.shelfLevel >= 1 && data.shelfLevel <= 10 &&
+        data.dateInbound is string && data.dateInbound.size() >= 1 && data.dateInbound.size() <= 64 &&
+        data.status in ['AVAILABLE', 'DISPATCHED', 'QUARANTINE'] &&
+        (!('dispatchId' in data) || (data.dispatchId is string && data.dispatchId.size() <= 128)) &&
+        isValidId(data.ownerUid) &&
+        data.serverCreatedAt is timestamp &&
+        data.serverUpdatedAt is timestamp;
+    }
+
+    function isValidOutboundRecord(data) {
+      return data.keys().hasAll([
+          'id', 'tanggal', 'jenisTransaksi', 'idPelanggan', 'noMeter',
+          'nomorAgenda', 'nama', 'tarif', 'daya', 'snKwhMeter', 'snMcb',
+          'segel', 'kabelTw', 'petugas', 'ownerUid', 'serverCreatedAt', 'serverUpdatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'id', 'tanggal', 'jenisTransaksi', 'idPelanggan', 'noMeter',
+          'nomorAgenda', 'nama', 'tarif', 'daya', 'snKwhMeter', 'snMcb',
+          'segel', 'kabelTw', 'petugas', 'gmKategori', 'gmKeterangan',
+          'noMeterLama', 'standMeterLama', 'snSegelLama', 'meterBrand',
+          'meterCategory', 'rackSource', 'ownerUid', 'serverCreatedAt', 'serverUpdatedAt'
+        ]) &&
+        isValidId(data.id) &&
+        data.tanggal is string && data.tanggal.size() >= 1 && data.tanggal.size() <= 64 &&
+        data.jenisTransaksi in ['PB', 'GM'] &&
+        data.idPelanggan is string && data.idPelanggan.size() <= 64 &&
+        data.noMeter is string && data.noMeter.size() <= 128 &&
+        data.nomorAgenda is string && data.nomorAgenda.size() <= 128 &&
+        data.nama is string && data.nama.size() <= 160 &&
+        data.tarif is string && data.tarif.size() <= 32 &&
+        data.daya is number && data.daya >= 0 &&
+        data.snKwhMeter is string && data.snKwhMeter.size() >= 1 && data.snKwhMeter.size() <= 128 &&
+        data.snMcb is string && data.snMcb.size() <= 128 &&
+        data.segel is string && data.segel.size() <= 128 &&
+        data.kabelTw is number && data.kabelTw >= 0 &&
+        data.petugas is string && data.petugas.size() >= 1 && data.petugas.size() <= 120 &&
+        (!('gmKategori' in data) || (data.gmKategori is string && data.gmKategori.size() <= 64)) &&
+        (!('gmKeterangan' in data) || (data.gmKeterangan is string && data.gmKeterangan.size() <= 500)) &&
+        (!('noMeterLama' in data) || (data.noMeterLama is string && data.noMeterLama.size() <= 128)) &&
+        (!('standMeterLama' in data) || (data.standMeterLama is string && data.standMeterLama.size() <= 64)) &&
+        (!('snSegelLama' in data) || (data.snSegelLama is string && data.snSegelLama.size() <= 128)) &&
+        (!('meterBrand' in data) || (data.meterBrand is string && data.meterBrand.size() <= 100)) &&
+        (!('meterCategory' in data) || (data.meterCategory is string && data.meterCategory.size() <= 80)) &&
+        (!('rackSource' in data) || (data.rackSource is string && data.rackSource.size() <= 120)) &&
+        isValidId(data.ownerUid) &&
+        data.serverCreatedAt is timestamp &&
+        data.serverUpdatedAt is timestamp;
+    }
+
+    function isValidSimagUser(data) {
+      return data.keys().hasAll([
+          'id', 'nip', 'nama', 'role', 'passwordHash',
+          'createdAt', 'updatedAt', 'ownerUid', 'serverCreatedAt', 'serverUpdatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'id', 'nip', 'nama', 'role', 'passwordHash',
+          'createdAt', 'updatedAt', 'lastLoginAt', 'ownerUid', 'serverCreatedAt', 'serverUpdatedAt'
+        ]) &&
+        isValidId(data.id) &&
+        data.nip is string && data.nip.size() >= 1 && data.nip.size() <= 32 &&
+        data.nama is string && data.nama.size() >= 1 && data.nama.size() <= 120 &&
+        data.role in ['Administrator', 'Kepala Gudang', 'Petugas Gudang', 'Operator'] &&
+        data.passwordHash is string && data.passwordHash.size() >= 16 && data.passwordHash.size() <= 128 &&
+        data.createdAt is string && data.createdAt.size() >= 1 && data.createdAt.size() <= 64 &&
+        data.updatedAt is string && data.updatedAt.size() >= 1 && data.updatedAt.size() <= 64 &&
+        (!('lastLoginAt' in data) || (data.lastLoginAt is string && data.lastLoginAt.size() <= 64)) &&
+        isValidId(data.ownerUid) &&
+        data.serverCreatedAt is timestamp &&
+        data.serverUpdatedAt is timestamp;
+    }
+
+    // 4. Collection Rules
+    match /warehouse_meta/{docId} {
+      allow get: if isValidId(docId) && isVerifiedEmail() && (resource == null || isAdmin() || existing().ownerUid == request.auth.uid);
+      allow list: if isVerifiedEmail() && (isAdmin() || existing().ownerUid == request.auth.uid);
+      allow create: if isValidId(docId) && isVerifiedEmail() &&
+        isValidWarehouseMeta(incoming()) &&
+        incoming().ownerUid == request.auth.uid &&
+        incoming().serverCreatedAt == request.time &&
+        incoming().serverUpdatedAt == request.time;
+      allow update: if isValidId(docId) && isVerifiedEmail() &&
+        isValidWarehouseMeta(incoming()) &&
+        (isAdmin() || existing().ownerUid == request.auth.uid) &&
+        incoming().ownerUid == existing().ownerUid &&
+        incoming().serverCreatedAt == existing().serverCreatedAt &&
+        incoming().serverUpdatedAt == request.time &&
+        (isAdmin() || incoming().diff(existing()).affectedKeys().hasOnly(['initialized', 'resetVersion', 'updatedBy', 'serverUpdatedAt']));
+      allow delete: if isValidId(docId) && isOwnerOrAdmin(existing());
+    }
+
+    match /warehouse_racks/{rackId} {
+      allow get: if isValidId(rackId) && isOwnerOrAdmin(existing());
+      allow list: if isVerifiedEmail() && (isAdmin() || existing().ownerUid == request.auth.uid);
+      allow create: if isValidId(rackId) && isVerifiedEmail() &&
+        isValidWarehouseRack(incoming()) &&
+        incoming().ownerUid == request.auth.uid &&
+        incoming().serverCreatedAt == request.time &&
+        incoming().serverUpdatedAt == request.time;
+      allow update: if isValidId(rackId) && isVerifiedEmail() &&
+        isValidWarehouseRack(incoming()) &&
+        (isAdmin() || existing().ownerUid == request.auth.uid) &&
+        incoming().ownerUid == existing().ownerUid &&
+        incoming().id == existing().id &&
+        incoming().serverCreatedAt == existing().serverCreatedAt &&
+        incoming().serverUpdatedAt == request.time &&
+        (isAdmin() || incoming().diff(existing()).affectedKeys().hasOnly(['name', 'zone', 'primaryBrand', 'brandColor', 'shelves', 'serverUpdatedAt']));
+      allow delete: if isValidId(rackId) && isOwnerOrAdmin(existing());
+    }
+
+    match /warehouse_cartons/{cartonId} {
+      allow get: if isValidId(cartonId) && isOwnerOrAdmin(existing());
+      allow list: if isVerifiedEmail() && (isAdmin() || existing().ownerUid == request.auth.uid);
+      allow create: if isValidId(cartonId) && isVerifiedEmail() &&
+        isValidInboundCarton(incoming()) &&
+        incoming().ownerUid == request.auth.uid &&
+        incoming().serverCreatedAt == request.time &&
+        incoming().serverUpdatedAt == request.time;
+      allow update: if isValidId(cartonId) && isVerifiedEmail() &&
+        isValidInboundCarton(incoming()) &&
+        (isAdmin() || existing().ownerUid == request.auth.uid) &&
+        incoming().ownerUid == existing().ownerUid &&
+        incoming().id == existing().id &&
+        incoming().serverCreatedAt == existing().serverCreatedAt &&
+        incoming().serverUpdatedAt == request.time &&
+        (isAdmin() || incoming().diff(existing()).affectedKeys().hasOnly(['brand', 'unitsCount', 'meterSerials', 'rackId', 'shelfLevel', 'notes', 'serverUpdatedAt']));
+      allow delete: if isValidId(cartonId) && isOwnerOrAdmin(existing());
+    }
+
+    match /warehouse_meters/{meterId} {
+      allow get: if isValidId(meterId) && isOwnerOrAdmin(existing());
+      allow list: if isVerifiedEmail() && (isAdmin() || existing().ownerUid == request.auth.uid);
+      allow create: if isValidId(meterId) && isVerifiedEmail() &&
+        isValidMeterUnit(incoming()) &&
+        incoming().ownerUid == request.auth.uid &&
+        incoming().serverCreatedAt == request.time &&
+        incoming().serverUpdatedAt == request.time;
+      allow update: if isValidId(meterId) && isVerifiedEmail() &&
+        isValidMeterUnit(incoming()) &&
+        (isAdmin() || existing().ownerUid == request.auth.uid) &&
+        incoming().ownerUid == existing().ownerUid &&
+        incoming().serialNumber == existing().serialNumber &&
+        incoming().serverCreatedAt == existing().serverCreatedAt &&
+        incoming().serverUpdatedAt == request.time &&
+        (isAdmin() || incoming().diff(existing()).affectedKeys().hasOnly(['brand', 'rackId', 'shelfLevel', 'status', 'dispatchId', 'serverUpdatedAt']));
+      allow delete: if isValidId(meterId) && isOwnerOrAdmin(existing());
+    }
+
+    match /warehouse_outbounds/{outboundId} {
+      allow get: if isValidId(outboundId) && isOwnerOrAdmin(existing());
+      allow list: if isVerifiedEmail() && (isAdmin() || existing().ownerUid == request.auth.uid);
+      allow create: if isValidId(outboundId) && isVerifiedEmail() &&
+        isValidOutboundRecord(incoming()) &&
+        incoming().ownerUid == request.auth.uid &&
+        incoming().serverCreatedAt == request.time &&
+        incoming().serverUpdatedAt == request.time;
+      allow update: if isValidId(outboundId) && isVerifiedEmail() &&
+        isValidOutboundRecord(incoming()) &&
+        (isAdmin() || existing().ownerUid == request.auth.uid) &&
+        incoming().ownerUid == existing().ownerUid &&
+        incoming().id == existing().id &&
+        incoming().serverCreatedAt == existing().serverCreatedAt &&
+        incoming().serverUpdatedAt == request.time &&
+        (isAdmin() || incoming().diff(existing()).affectedKeys().hasOnly(['gmKeterangan', 'serverUpdatedAt']));
+      allow delete: if isValidId(outboundId) && isOwnerOrAdmin(existing());
+    }
+
+    match /simag_users/{userId} {
+      allow get: if isValidId(userId) && isOwnerOrAdmin(existing());
+      allow list: if isVerifiedEmail() && (isAdmin() || existing().ownerUid == request.auth.uid);
+      allow create: if isValidId(userId) && isVerifiedEmail() &&
+        isValidSimagUser(incoming()) &&
+        incoming().ownerUid == request.auth.uid &&
+        incoming().serverCreatedAt == request.time &&
+        incoming().serverUpdatedAt == request.time;
+      allow update: if isValidId(userId) && isVerifiedEmail() &&
+        isValidSimagUser(incoming()) &&
+        (isAdmin() || existing().ownerUid == request.auth.uid) &&
+        incoming().ownerUid == existing().ownerUid &&
+        incoming().id == existing().id &&
+        incoming().serverCreatedAt == existing().serverCreatedAt &&
+        incoming().serverUpdatedAt == request.time &&
+        (isAdmin() || incoming().diff(existing()).affectedKeys().hasOnly(['nama', 'role', 'passwordHash', 'updatedAt', 'lastLoginAt', 'serverUpdatedAt']));
+      allow delete: if isValidId(userId) && isOwnerOrAdmin(existing());
+    }
+  }
+}
