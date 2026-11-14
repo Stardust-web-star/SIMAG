@@ -7,7 +7,8 @@
       "properties": {
         "initialized": { "type": "boolean", "description": "Menandakan apakah gudang cloud sudah terinisialisasi." },
         "resetVersion": { "type": "number", "description": "Versi reset gudang untuk sinkronisasi reset antar perangkat." },
-        "ownerUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$", "description": "UID pemilik utama data gudang." },
+        "ownerUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$", "description": "UID pemilik pembuat dokumen awal." },
+        "workspaceId": { "type": "string", "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$", "description": "ID workspace bersama SIMAG PLN ULP Baguala." },
         "updatedBy": { "type": "string", "maxLength": 120, "description": "NIP atau nama operator terakhir." },
         "serverCreatedAt": { "type": "string", "format": "date-time", "description": "Timestamp pembuatan di server." },
         "serverUpdatedAt": { "type": "string", "format": "date-time", "description": "Timestamp pembaruan terakhir di server." }
@@ -26,6 +27,7 @@
         "brandColor": { "type": "string", "maxLength": 32 },
         "shelves": { "type": "array", "description": "Daftar 4 tingkat rak beserta ID karton." },
         "ownerUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "workspaceId": { "type": "string", "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
         "serverCreatedAt": { "type": "string", "format": "date-time" },
         "serverUpdatedAt": { "type": "string", "format": "date-time" }
       },
@@ -49,6 +51,7 @@
         "receivedBy": { "type": "string", "maxLength": 120 },
         "notes": { "type": "string", "maxLength": 500 },
         "ownerUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "workspaceId": { "type": "string", "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
         "serverCreatedAt": { "type": "string", "format": "date-time" },
         "serverUpdatedAt": { "type": "string", "format": "date-time" }
       },
@@ -85,6 +88,7 @@
         "status": { "type": "string", "enum": ["AVAILABLE", "DISPATCHED", "QUARANTINE"] },
         "dispatchId": { "type": "string", "maxLength": 128 },
         "ownerUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "workspaceId": { "type": "string", "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
         "serverCreatedAt": { "type": "string", "format": "date-time" },
         "serverUpdatedAt": { "type": "string", "format": "date-time" }
       },
@@ -131,6 +135,7 @@
         "meterCategory": { "type": "string", "maxLength": 80 },
         "rackSource": { "type": "string", "maxLength": 120 },
         "ownerUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "workspaceId": { "type": "string", "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
         "serverCreatedAt": { "type": "string", "format": "date-time" },
         "serverUpdatedAt": { "type": "string", "format": "date-time" }
       },
@@ -168,6 +173,7 @@
         "updatedAt": { "type": "string", "maxLength": 64 },
         "lastLoginAt": { "type": "string", "maxLength": 64 },
         "ownerUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "workspaceId": { "type": "string", "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
         "serverCreatedAt": { "type": "string", "format": "date-time" },
         "serverUpdatedAt": { "type": "string", "format": "date-time" }
       },

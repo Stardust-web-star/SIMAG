@@ -257,11 +257,13 @@ export const Header: React.FC<HeaderProps> = ({
                 ? cloudSyncStatus?.status === 'error'
                   ? 'bg-rose-50 dark:bg-rose-950/50 border-rose-300 dark:border-rose-500/50 text-rose-700 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-900/60 shadow-sm'
                   : 'bg-emerald-50 dark:bg-emerald-950/50 border-emerald-300 dark:border-emerald-500/50 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 shadow-sm'
+                : cloudSyncStatus?.status === 'connecting'
+                ? 'bg-cyan-50 dark:bg-cyan-950/40 border-cyan-300 dark:border-cyan-500/50 text-cyan-800 dark:text-cyan-300 hover:bg-cyan-100 dark:hover:bg-cyan-900/50 shadow-sm'
                 : 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-500/50 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/50 shadow-sm'
             }`}
-            title="Sinkronisasi Cloud Dua Arah (Google AI Studio ⇄ Vercel) & Google Sheets"
+            title="Sinkronisasi Cloud Otomatis Dua Arah (Google AI Studio ⇄ Vercel) & Google Sheets"
           >
-            {currentUser && (
+            {(currentUser || cloudSyncStatus?.status === 'connecting') && (
               <span
                 className={`w-2 h-2 rounded-full shrink-0 ${
                   autoSyncStatus === 'syncing' || cloudSyncStatus?.status === 'syncing' || cloudSyncStatus?.status === 'connecting'
@@ -279,18 +281,28 @@ export const Header: React.FC<HeaderProps> = ({
                 <Cloud className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
               )
             ) : (
-              <Cloud className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+              <Cloud
+                className={`w-4 h-4 ${
+                  cloudSyncStatus?.status === 'connecting'
+                    ? 'text-cyan-600 dark:text-cyan-400'
+                    : 'text-amber-600 dark:text-amber-400'
+                }`}
+              />
             )}
             <span className="hidden lg:inline">
               {currentUser
-                ? autoSyncStatus === 'syncing'
+                ? autoSyncStatus === 'syncing' || cloudSyncStatus?.status === 'syncing'
                   ? 'Menyinkronkan...'
+                  : cloudSyncStatus?.status === 'error'
+                  ? 'Gangguan Cloud'
                   : cloudSyncStatus?.status === 'synced'
                   ? hasSheetsToken && autoSyncEnabled
                     ? 'Cloud & Sheets'
-                    : 'Cloud Aktif'
-                  : 'Cloud & Sheets'
-                : 'Hubungkan Cloud'}
+                    : 'Cloud Otomatis'
+                  : 'Menghubungkan...'
+                : cloudSyncStatus?.status === 'connecting'
+                ? 'Menghubungkan...'
+                : 'Pengaturan Cloud'}
             </span>
           </button>
 

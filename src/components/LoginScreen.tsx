@@ -16,7 +16,11 @@ import {
   Info,
   Sun,
   Moon,
+  Cloud,
+  CheckCircle2,
 } from 'lucide-react';
+import type { User as FirebaseUser } from 'firebase/auth';
+import { CloudSyncStatus } from '../services/firestoreSync';
 import { SimagSession, SimagUser } from '../types/auth';
 import { authenticateSimagUser } from '../services/simagAuthService';
 
@@ -26,6 +30,11 @@ interface LoginScreenProps {
   onDismissNotice?: () => void;
   theme: 'dark' | 'light';
   onToggleTheme: () => void;
+  cloudUser?: FirebaseUser | null;
+  cloudStatus?: CloudSyncStatus;
+  onConnectCloud?: () => Promise<void>;
+  isConnectingCloud?: boolean;
+  cloudError?: string | null;
 }
 
 export const LoginScreen: React.FC<LoginScreenProps> = ({
@@ -34,6 +43,11 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   onDismissNotice,
   theme,
   onToggleTheme,
+  cloudUser,
+  cloudStatus,
+  onConnectCloud,
+  isConnectingCloud = false,
+  cloudError,
 }) => {
   const [nip, setNip] = useState('');
   const [password, setPassword] = useState('');
@@ -306,10 +320,57 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                 <span>{isSubmitting ? 'Memverifikasi...' : 'Masuk ke Dashboard SIMAG'}</span>
               </button>
             </form>
+
+            {/* Automatic Cloud Two-Way Sync Status Bar */}
+            {(cloudUser || cloudStatus || onConnectCloud) && (
+              <div className="mt-5 pt-4 border-t border-slate-200/80 dark:border-slate-800/80">
+                {cloudUser ? (
+                  <div className="p-2.5 px-3 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 flex items-center justify-between gap-2 text-xs">
+                    <span className="inline-flex items-center gap-2 text-emerald-800 dark:text-emerald-300 font-semibold truncate">
+                      <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                      <span className="truncate">
+                        Sinkronisasi Otomatis AI Studio ⇄ Vercel{' '}
+                        {cloudStatus?.status === 'synced' ? 'Aktif' : 'Terhubung'}
+                        {cloudUser.email ? ` (${cloudUser.email})` : ''}
+                      </span>
+                    </span>
+                  </div>
+                ) : isConnectingCloud || cloudStatus?.status === 'connecting' ? (
+                  <div className="p-2.5 px-3 rounded-xl bg-cyan-50 dark:bg-cyan-500/10 border border-cyan-200 dark:border-cyan-500/30 flex items-center gap-2 text-xs text-cyan-800 dark:text-cyan-300 font-semibold">
+                    <Cloud className="w-4 h-4 shrink-0 animate-pulse text-cyan-600 dark:text-cyan-400" />
+                    <span>Menghubungkan sinkronisasi otomatis AI Studio ⇄ Vercel...</span>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="p-2.5 px-3 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/35 flex flex-wrap items-center justify-between gap-2">
+                      <span className="inline-flex items-center gap-2 text-[11px] font-semibold text-amber-800 dark:text-amber-300">
+                        <Cloud className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                        <span>Sinkronisasi otomatis butuh aktifkan Anonymous di Firebase Console</span>
+                      </span>
+                      {onConnectCloud && (
+                        <button
+                          type="button"
+                          disabled={isConnectingCloud}
+                          onClick={() => void onConnectCloud()}
+                          className="btn-tactile px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white text-[11px] font-bold cursor-pointer"
+                        >
+                          Masuk Google
+                        </button>
+                      )}
+                    </div>
+                    {cloudError && (
+                      <p className="text-[11px] text-rose-600 dark:text-rose-400 px-1 leading-snug">
+                        {cloudError}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Right Panel Footer */}
-          <div className="mt-8 pt-4 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500 dark:text-slate-400">
+          <div className="mt-6 pt-4 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500 dark:text-slate-400">
             <span className="inline-flex items-center gap-1.5 font-medium">
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
               <span>Enkripsi Terproteksi · Auto-Logout 5 Menit &amp; Tutup Tab</span>

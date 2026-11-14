@@ -12,7 +12,6 @@ import {
   onSnapshot,
   query,
   serverTimestamp,
-  setDoc,
   updateDoc,
   where,
   writeBatch,
@@ -95,6 +94,8 @@ export interface CloudWarehousePayload {
   lastSyncedAt: string;
 }
 
+export const WAREHOUSE_WORKSPACE_ID = 'pln-ulp-baguala-simag';
+
 const ADMIN_EMAIL = 'fikiilham56@gmail.com';
 const COL_META = 'warehouse_meta';
 const COL_RACKS = 'warehouse_racks';
@@ -129,6 +130,7 @@ function stripUndefined<T extends Record<string, any>>(obj: T): Record<string, a
 function stripCloudMeta<T extends Record<string, any>>(data: T): T {
   const copy = { ...data };
   delete copy.ownerUid;
+  delete copy.workspaceId;
   delete copy.serverCreatedAt;
   delete copy.serverUpdatedAt;
   return copy as T;
@@ -142,7 +144,8 @@ function buildCollectionQuery(colName: string, user: User) {
   if (isBootstrapAdmin(user)) {
     return collection(db, colName);
   }
-  return query(collection(db, colName), where('ownerUid', '==', user.uid));
+  // Single-field query matching shared workspace documents (including legacy docs before workspaceId)
+  return query(collection(db, colName), where('ownerUid', '>', ''));
 }
 
 function hasCustomizedRacks(racks: WarehouseRack[]): boolean {
@@ -207,13 +210,13 @@ async function commitBatchedOps(ops: BatchOp[]): Promise<void> {
 function formatRackDoc(rack: WarehouseRack, ownerUid: string, isNew: boolean): Record<string, any> {
   const payload = stripUndefined({
     id: toSafeDocId(rack.id),
-    name: rack.name.slice(0, 120),
-    zone: rack.zone.slice(0, 120),
-    primaryBrand: rack.primaryBrand.slice(0, 100),
+    name: (rack.name || rack.id || 'Rak Gudang').slice(0, 120),
+    zone: (rack.zone || 'Gudang Utama').slice(0, 120),
+    primaryBrand: (rack.primaryBrand || 'Umum').slice(0, 100),
     brandColor: rack.brandColor ? rack.brandColor.slice(0, 32) : undefined,
     shelves: rack.shelves.map(s => ({
       level: Number(s.level),
-      label: String(s.label),
+      label: String(s.label || `Tingkat ${s.level}`),
       cartonCapacity: Number(s.cartonCapacity || 16),
       cartonIds: Array.isArray(s.cartonIds) ? s.cartonIds.map(toSafeDocId) : [],
     })),
@@ -225,12 +228,14 @@ function formatRackDoc(rack: WarehouseRack, ownerUid: string, isNew: boolean): R
       primaryBrand: payload.primaryBrand,
       ...(payload.brandColor !== undefined ? { brandColor: payload.brandColor } : {}),
       shelves: payload.shelves,
+      workspaceId: WAREHOUSE_WORKSPACE_ID,
       serverUpdatedAt: serverTimestamp(),
     };
   }
   return {
     ...payload,
     ownerUid,
+    workspaceId: WAREHOUSE_WORKSPACE_ID,
     serverCreatedAt: serverTimestamp(),
     serverUpdatedAt: serverTimestamp(),
   };
@@ -238,18 +243,19 @@ function formatRackDoc(rack: WarehouseRack, ownerUid: string, isNew: boolean): R
 
 function formatCartonDoc(carton: InboundCarton, ownerUid: string, isNew: boolean): Record<string, any> {
   const id = toSafeDocId(carton.id);
+  const nowFallback = new Date().toISOString().slice(0, 16);
   const payload = stripUndefined({
     id,
-    cartonBarcode: carton.cartonBarcode.slice(0, 128),
-    brand: carton.brand.slice(0, 100),
-    phase: carton.phase,
-    category: String(carton.category).slice(0, 80),
-    unitsCount: Number(carton.unitsCount),
-    meterSerials: carton.meterSerials.slice(0, 100),
-    rackId: carton.rackId.slice(0, 64),
-    shelfLevel: Number(carton.shelfLevel),
-    dateInbound: carton.dateInbound.slice(0, 64),
-    receivedBy: carton.receivedBy.slice(0, 120),
+    cartonBarcode: (carton.cartonBarcode || id).slice(0, 128),
+    brand: (carton.brand || 'Umum').slice(0, 100),
+    phase: carton.phase === '3 Phasa' ? '3 Phasa' : '1 Phasa',
+    category: String(carton.category || 'Prabayar').slice(0, 80),
+    unitsCount: Number(carton.unitsCount || 0),
+    meterSerials: Array.isArray(carton.meterSerials) ? carton.meterSerials.slice(0, 100) : [],
+    rackId: (carton.rackId || 'RAK-A').slice(0, 64),
+    shelfLevel: Number(carton.shelfLevel || 1),
+    dateInbound: (carton.dateInbound || nowFallback).slice(0, 64),
+    receivedBy: (carton.receivedBy || 'Petugas Gudang').slice(0, 120),
     notes: carton.notes ? carton.notes.slice(0, 500) : undefined,
   });
   if (!isNew) {
@@ -260,28 +266,31 @@ function formatCartonDoc(carton: InboundCarton, ownerUid: string, isNew: boolean
       rackId: payload.rackId,
       shelfLevel: payload.shelfLevel,
       ...(payload.notes !== undefined ? { notes: payload.notes } : {}),
+      workspaceId: WAREHOUSE_WORKSPACE_ID,
       serverUpdatedAt: serverTimestamp(),
     };
   }
   return {
     ...payload,
     ownerUid,
+    workspaceId: WAREHOUSE_WORKSPACE_ID,
     serverCreatedAt: serverTimestamp(),
     serverUpdatedAt: serverTimestamp(),
   };
 }
 
 function formatMeterDoc(meter: MeterUnit, ownerUid: string, isNew: boolean): Record<string, any> {
+  const nowFallback = new Date().toISOString().slice(0, 16);
   const payload = stripUndefined({
-    serialNumber: meter.serialNumber.slice(0, 128),
-    brand: meter.brand.slice(0, 100),
-    phase: meter.phase,
-    category: String(meter.category).slice(0, 80),
-    cartonBarcode: meter.cartonBarcode.slice(0, 128),
-    rackId: meter.rackId.slice(0, 64),
-    shelfLevel: Number(meter.shelfLevel),
-    dateInbound: meter.dateInbound.slice(0, 64),
-    status: meter.status,
+    serialNumber: (meter.serialNumber || `SN-${Date.now()}`).slice(0, 128),
+    brand: (meter.brand || 'Umum').slice(0, 100),
+    phase: meter.phase === '3 Phasa' ? '3 Phasa' : '1 Phasa',
+    category: String(meter.category || 'Prabayar').slice(0, 80),
+    cartonBarcode: (meter.cartonBarcode || 'KARTON').slice(0, 128),
+    rackId: (meter.rackId || 'RAK-A').slice(0, 64),
+    shelfLevel: Number(meter.shelfLevel || 1),
+    dateInbound: (meter.dateInbound || nowFallback).slice(0, 64),
+    status: meter.status || 'AVAILABLE',
     dispatchId: meter.dispatchId ? toSafeDocId(meter.dispatchId) : undefined,
   });
   if (!isNew) {
@@ -291,33 +300,36 @@ function formatMeterDoc(meter: MeterUnit, ownerUid: string, isNew: boolean): Rec
       shelfLevel: payload.shelfLevel,
       status: payload.status,
       ...(payload.dispatchId !== undefined ? { dispatchId: payload.dispatchId } : {}),
+      workspaceId: WAREHOUSE_WORKSPACE_ID,
       serverUpdatedAt: serverTimestamp(),
     };
   }
   return {
     ...payload,
     ownerUid,
+    workspaceId: WAREHOUSE_WORKSPACE_ID,
     serverCreatedAt: serverTimestamp(),
     serverUpdatedAt: serverTimestamp(),
   };
 }
 
 function formatOutboundDoc(record: OutboundRecord, ownerUid: string): Record<string, any> {
+  const nowFallback = new Date().toISOString().slice(0, 16);
   return stripUndefined({
     id: toSafeDocId(record.id),
-    tanggal: record.tanggal.slice(0, 64),
-    jenisTransaksi: record.jenisTransaksi,
+    tanggal: (record.tanggal || nowFallback).slice(0, 64),
+    jenisTransaksi: record.jenisTransaksi === 'GM' ? 'GM' : 'PB',
     idPelanggan: String(record.idPelanggan || '').slice(0, 64),
     noMeter: String(record.noMeter || '').slice(0, 128),
     nomorAgenda: String(record.nomorAgenda || '').slice(0, 128),
     nama: String(record.nama || '').slice(0, 160),
     tarif: String(record.tarif || '').slice(0, 32),
     daya: Number(record.daya || 0),
-    snKwhMeter: record.snKwhMeter.slice(0, 128),
+    snKwhMeter: (record.snKwhMeter || '-').slice(0, 128),
     snMcb: String(record.snMcb || '').slice(0, 128),
     segel: String(record.segel || '').slice(0, 128),
     kabelTw: Number(record.kabelTw || 0),
-    petugas: record.petugas.slice(0, 120),
+    petugas: (record.petugas || 'Petugas Lapangan').slice(0, 120),
     gmKategori: record.gmKategori ? String(record.gmKategori).slice(0, 64) : undefined,
     gmKeterangan: record.gmKeterangan ? record.gmKeterangan.slice(0, 500) : undefined,
     noMeterLama: record.noMeterLama ? record.noMeterLama.slice(0, 128) : undefined,
@@ -327,6 +339,7 @@ function formatOutboundDoc(record: OutboundRecord, ownerUid: string): Record<str
     meterCategory: record.meterCategory ? String(record.meterCategory).slice(0, 80) : undefined,
     rackSource: record.rackSource ? record.rackSource.slice(0, 120) : undefined,
     ownerUid,
+    workspaceId: WAREHOUSE_WORKSPACE_ID,
     serverCreatedAt: serverTimestamp(),
     serverUpdatedAt: serverTimestamp(),
   });
@@ -334,14 +347,15 @@ function formatOutboundDoc(record: OutboundRecord, ownerUid: string): Record<str
 
 function formatSimagUserDoc(u: SimagUser, ownerUid: string, isNew: boolean): Record<string, any> {
   const id = toSafeDocId(u.id);
+  const nowFallback = new Date().toISOString();
   const payload = stripUndefined({
     id,
-    nip: u.nip.slice(0, 32),
-    nama: u.nama.slice(0, 120),
+    nip: (u.nip || id).slice(0, 32),
+    nama: (u.nama || u.nip || 'Petugas SIMAG').slice(0, 120),
     role: u.role,
     passwordHash: u.passwordHash.slice(0, 128),
-    createdAt: u.createdAt.slice(0, 64),
-    updatedAt: u.updatedAt.slice(0, 64),
+    createdAt: (u.createdAt || nowFallback).slice(0, 64),
+    updatedAt: (u.updatedAt || nowFallback).slice(0, 64),
     lastLoginAt: u.lastLoginAt ? u.lastLoginAt.slice(0, 64) : undefined,
   });
   if (!isNew) {
@@ -351,12 +365,14 @@ function formatSimagUserDoc(u: SimagUser, ownerUid: string, isNew: boolean): Rec
       passwordHash: payload.passwordHash,
       updatedAt: payload.updatedAt,
       ...(payload.lastLoginAt !== undefined ? { lastLoginAt: payload.lastLoginAt } : {}),
+      workspaceId: WAREHOUSE_WORKSPACE_ID,
       serverUpdatedAt: serverTimestamp(),
     };
   }
   return {
     ...payload,
     ownerUid,
+    workspaceId: WAREHOUSE_WORKSPACE_ID,
     serverCreatedAt: serverTimestamp(),
     serverUpdatedAt: serverTimestamp(),
   };
@@ -399,6 +415,7 @@ export async function forceUploadLocalToCloud(
       data: {
         initialized: true,
         resetVersion,
+        workspaceId: WAREHOUSE_WORKSPACE_ID,
         updatedBy: user.email || user.uid,
         serverUpdatedAt: serverTimestamp(),
       },
@@ -411,6 +428,7 @@ export async function forceUploadLocalToCloud(
         initialized: true,
         resetVersion,
         ownerUid: user.uid,
+        workspaceId: WAREHOUSE_WORKSPACE_ID,
         updatedBy: user.email || user.uid,
         serverCreatedAt: serverTimestamp(),
         serverUpdatedAt: serverTimestamp(),
@@ -497,7 +515,7 @@ export async function bootstrapAndSubscribeWarehouse(
   onCloudData: (payload: CloudWarehousePayload) => void,
   onStatusChange: (status: CloudSyncStatus) => void
 ): Promise<() => void> {
-  onStatusChange({ status: 'connecting', message: 'Menghubungkan sinkronisasi cloud dua arah...' });
+  onStatusChange({ status: 'connecting', message: 'Menghubungkan sinkronisasi otomatis dua arah...' });
 
   let metaSnap;
   try {
@@ -555,30 +573,43 @@ export async function bootstrapAndSubscribeWarehouse(
     hasCustomizedRacks(localSnap.racks) ||
     localSnap.simagUsers.length > 2;
 
+  let seededRacks = cloudRacks.length > 0 ? cloudRacks : localSnap.racks;
+  let seededCartons = cloudCartons;
+  let seededMeters = cloudMeters;
+  let seededOutbounds = cloudOutbounds;
+  let seededUsers = cloudUsers.length > 0 ? cloudUsers : localSnap.simagUsers;
+
   if (!cloudHasInventory && currentMetaResetVersion === 0 && localHasCustomization) {
-    // Cloud is empty & never explicitly reset, while this browser (e.g. Vercel with 30 meters) has real data -> promote to cloud!
+    // Cloud is empty & never explicitly reset, while this browser holds real data -> promote to cloud!
     await forceUploadLocalToCloud(user, localSnap, 1);
+    seededRacks = localSnap.racks;
+    seededCartons = localSnap.cartons;
+    seededMeters = localSnap.meters;
+    seededOutbounds = localSnap.outbounds;
+    seededUsers = localSnap.simagUsers;
     localStorage.setItem(CLOUD_SYNCED_FLAG, 'true');
   } else if (!metaSnap.exists()) {
-    // Initialize empty cloud racks + default users without blocking a later browser that might hold 30 meters (resetVersion = 0)
-    await forceUploadLocalToCloud(
-      user,
-      {
-        racks: cloudRacks.length > 0 ? cloudRacks : localSnap.racks,
-        cartons: localSnap.cartons,
-        meters: localSnap.meters,
-        outbounds: localSnap.outbounds,
-        simagUsers: cloudUsers.length > 0 ? cloudUsers : localSnap.simagUsers,
-      },
-      localHasInventory ? 1 : 0
-    );
+    // Initialize empty cloud racks + default users without blocking a later browser that might hold inventory
+    const initSnapshot = {
+      racks: cloudRacks.length > 0 ? cloudRacks : localSnap.racks,
+      cartons: localSnap.cartons,
+      meters: localSnap.meters,
+      outbounds: localSnap.outbounds,
+      simagUsers: cloudUsers.length > 0 ? cloudUsers : localSnap.simagUsers,
+    };
+    await forceUploadLocalToCloud(user, initSnapshot, localHasInventory ? 1 : 0);
+    seededRacks = initSnapshot.racks;
+    seededCartons = initSnapshot.cartons;
+    seededMeters = initSnapshot.meters;
+    seededOutbounds = initSnapshot.outbounds;
+    seededUsers = initSnapshot.simagUsers;
     localStorage.setItem(CLOUD_SYNCED_FLAG, 'true');
   } else if (
     cloudHasInventory &&
     localHasInventory &&
     localStorage.getItem(CLOUD_SYNCED_FLAG) !== 'true'
   ) {
-    // First-time connection on a browser that already created different local records before cloud existed -> non-destructive merge of missing IDs
+    // First-time connection on a browser that created different local records before syncing -> non-destructive merge
     const cloudCartonIds = new Set(cloudCartons.map(c => toSafeDocId(c.id)));
     const cloudMeterSns = new Set(cloudMeters.map(m => m.serialNumber));
     const cloudOutboundIds = new Set(cloudOutbounds.map(o => toSafeDocId(o.id)));
@@ -595,7 +626,6 @@ export async function bootstrapAndSubscribeWarehouse(
       missingOutbounds.length > 0 ||
       missingUsers.length > 0
     ) {
-      // Merge cartonIds into existing cloud racks
       const mergedRacks = (cloudRacks.length > 0 ? cloudRacks : localSnap.racks).map(r => ({
         ...r,
         shelves: r.shelves.map(s => {
@@ -620,19 +650,39 @@ export async function bootstrapAndSubscribeWarehouse(
         },
         Math.max(1, currentMetaResetVersion)
       );
+      seededRacks = mergedRacks;
+      seededCartons = [...cloudCartons, ...missingCartons];
+      seededMeters = [...cloudMeters, ...missingMeters];
+      seededOutbounds = [...cloudOutbounds, ...missingOutbounds];
+      seededUsers = [...cloudUsers, ...missingUsers];
     }
     localStorage.setItem(CLOUD_SYNCED_FLAG, 'true');
   } else {
     localStorage.setItem(CLOUD_SYNCED_FLAG, 'true');
   }
 
+  // Ensure cloud simag_users is never empty if meta already existed from an older client
+  if (cloudUsers.length === 0 && seededUsers.length > 0) {
+    const seedUserOps: BatchOp[] = seededUsers.map(u =>
+      upsertDocOp(
+        COL_USERS,
+        u.id,
+        formatSimagUserDoc(u, user.uid, true),
+        formatSimagUserDoc(u, user.uid, false)
+      )
+    );
+    commitBatchedOps(seedUserOps).catch(() => {
+      // Non-blocking background seed
+    });
+  }
+
   // Live state mirror for debounced snapshot emissions
   const liveState = {
-    racks: normalizeRacksList(cloudRacks.length > 0 ? cloudRacks : localSnap.racks),
-    cartons: cloudCartons,
-    meters: cloudMeters,
-    outbounds: cloudOutbounds,
-    simagUsers: cloudUsers.length > 0 ? cloudUsers : localSnap.simagUsers,
+    racks: normalizeRacksList(seededRacks),
+    cartons: seededCartons,
+    meters: seededMeters,
+    outbounds: seededOutbounds,
+    simagUsers: seededUsers,
   };
 
   let emitTimer: number | null = null;
@@ -658,10 +708,22 @@ export async function bootstrapAndSubscribeWarehouse(
       });
       onStatusChange({
         status: 'synced',
-        message: 'Sinkronisasi dua arah aktif (Google AI Studio ⇄ Vercel)',
+        message: 'Sinkronisasi dua arah otomatis aktif (Google AI Studio ⇄ Vercel)',
         lastSyncedAt: nowTime,
       });
-    }, 50);
+    }, 80);
+  };
+
+  // Emit authoritative cloud snapshot immediately after bootstrap completes
+  scheduleEmit();
+
+  const reportSnapshotError = (error: unknown, op: OperationType, path: string) => {
+    const msg = error instanceof Error ? error.message : String(error);
+    onStatusChange({
+      status: 'error',
+      message: `Gangguan sinkronisasi Firestore (${path}): ${msg}`,
+    });
+    handleFirestoreError(error, op, path);
   };
 
   const unsubMeta = onSnapshot(
@@ -677,7 +739,7 @@ export async function bootstrapAndSubscribeWarehouse(
       }
     },
     error => {
-      handleFirestoreError(error, OperationType.GET, `${COL_META}/state`);
+      reportSnapshotError(error, OperationType.GET, `${COL_META}/state`);
     }
   );
 
@@ -699,7 +761,7 @@ export async function bootstrapAndSubscribeWarehouse(
       }
     },
     error => {
-      handleFirestoreError(error, OperationType.LIST, COL_RACKS);
+      reportSnapshotError(error, OperationType.LIST, COL_RACKS);
     }
   );
 
@@ -719,7 +781,7 @@ export async function bootstrapAndSubscribeWarehouse(
       scheduleEmit();
     },
     error => {
-      handleFirestoreError(error, OperationType.LIST, COL_CARTONS);
+      reportSnapshotError(error, OperationType.LIST, COL_CARTONS);
     }
   );
 
@@ -739,7 +801,7 @@ export async function bootstrapAndSubscribeWarehouse(
       scheduleEmit();
     },
     error => {
-      handleFirestoreError(error, OperationType.LIST, COL_METERS);
+      reportSnapshotError(error, OperationType.LIST, COL_METERS);
     }
   );
 
@@ -759,7 +821,7 @@ export async function bootstrapAndSubscribeWarehouse(
       scheduleEmit();
     },
     error => {
-      handleFirestoreError(error, OperationType.LIST, COL_OUTBOUNDS);
+      reportSnapshotError(error, OperationType.LIST, COL_OUTBOUNDS);
     }
   );
 
@@ -781,7 +843,7 @@ export async function bootstrapAndSubscribeWarehouse(
       }
     },
     error => {
-      handleFirestoreError(error, OperationType.LIST, COL_USERS);
+      reportSnapshotError(error, OperationType.LIST, COL_USERS);
     }
   );
 
@@ -794,6 +856,54 @@ export async function bootstrapAndSubscribeWarehouse(
     unsubMeters();
     unsubOutbounds();
     unsubUsers();
+  };
+}
+
+export async function pullLatestFromCloud(
+  user: User,
+  fallbackLocal: { racks: WarehouseRack[]; simagUsers: SimagUser[] }
+): Promise<CloudWarehousePayload> {
+  const fetchCol = async <T extends Record<string, any>>(colName: string): Promise<T[]> => {
+    try {
+      const snap = await getDocs(buildCollectionQuery(colName, user));
+      const items: T[] = [];
+      snap.forEach(d => {
+        const raw = d.data();
+        knownDocsCache.set(`${colName}/${d.id}`, {
+          ownerUid: raw.ownerUid,
+          serverCreatedAt: raw.serverCreatedAt,
+        });
+        items.push(stripCloudMeta(raw) as T);
+      });
+      return items;
+    } catch (error) {
+      handleFirestoreError(error, OperationType.LIST, colName);
+    }
+  };
+
+  const [cloudRacks, cloudCartons, cloudMeters, cloudOutbounds, cloudUsers] = await Promise.all([
+    fetchCol<WarehouseRack>(COL_RACKS),
+    fetchCol<InboundCarton>(COL_CARTONS),
+    fetchCol<MeterUnit>(COL_METERS),
+    fetchCol<OutboundRecord>(COL_OUTBOUNDS),
+    fetchCol<SimagUser>(COL_USERS),
+  ]);
+
+  const nowTime = new Date().toLocaleTimeString('id-ID', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+
+  return {
+    racks: normalizeRacksList(cloudRacks.length > 0 ? cloudRacks : fallbackLocal.racks),
+    cartons: [...cloudCartons].sort((a, b) => b.dateInbound.localeCompare(a.dateInbound)),
+    meters: [...cloudMeters],
+    outbounds: [...cloudOutbounds].sort((a, b) => b.tanggal.localeCompare(a.tanggal)),
+    simagUsers: [...(cloudUsers.length > 0 ? cloudUsers : fallbackLocal.simagUsers)].sort((a, b) =>
+      a.createdAt.localeCompare(b.createdAt)
+    ),
+    lastSyncedAt: nowTime,
   };
 }
 
@@ -1013,6 +1123,7 @@ export async function pushResetWarehouseToCloud(
       data: {
         initialized: true,
         resetVersion: nextVersion,
+        workspaceId: WAREHOUSE_WORKSPACE_ID,
         updatedBy: user.email || user.uid,
         serverUpdatedAt: serverTimestamp(),
       },
@@ -1025,6 +1136,7 @@ export async function pushResetWarehouseToCloud(
         initialized: true,
         resetVersion: nextVersion,
         ownerUid: user.uid,
+        workspaceId: WAREHOUSE_WORKSPACE_ID,
         updatedBy: user.email || user.uid,
         serverCreatedAt: serverTimestamp(),
         serverUpdatedAt: serverTimestamp(),
@@ -1089,7 +1201,7 @@ export async function pushDeleteSimagUserFromCloud(simagUserId: string): Promise
 }
 
 export async function pushSimagUserLoginTimeToCloud(
-  user: User,
+  _user: User,
   simagUser: SimagUser
 ): Promise<void> {
   const id = toSafeDocId(simagUser.id);
@@ -1098,6 +1210,7 @@ export async function pushSimagUserLoginTimeToCloud(
   try {
     await updateDoc(doc(db, COL_USERS, id), {
       lastLoginAt: simagUser.lastLoginAt || simagUser.updatedAt,
+      workspaceId: WAREHOUSE_WORKSPACE_ID,
       serverUpdatedAt: serverTimestamp(),
     });
   } catch {

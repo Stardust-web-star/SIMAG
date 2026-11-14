@@ -17,6 +17,9 @@ import {
 } from './data/initialData';
 import { 
   initAuth,
+  ensureAutoCloudSession,
+  CloudAutoAuthDisabledError,
+  googleCloudSignIn,
   getAccessToken,
   hasCachedSheetsToken,
   clearAccessToken
@@ -24,6 +27,7 @@ import {
 import {
   bootstrapAndSubscribeWarehouse,
   forceUploadLocalToCloud,
+  pullLatestFromCloud,
   pushInboundToCloud,
   pushAddUnitsToCartonToCloud,
   pushUpdateCartonBrandToCloud,
@@ -177,7 +181,13 @@ export default function App() {
   // Google Auth, Two-Way Cloud Sync & Sheets State
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [hasSheetsToken, setHasSheetsToken] = useState<boolean>(() => hasCachedSheetsToken());
-  const [cloudSyncStatus, setCloudSyncStatus] = useState<CloudSyncStatus>({ status: 'disconnected' });
+  const [cloudSyncStatus, setCloudSyncStatus] = useState<CloudSyncStatus>({
+    status: 'connecting',
+    message: 'Menghubungkan sinkronisasi otomatis dua arah...',
+  });
+  const [isConnectingCloud, setIsConnectingCloud] = useState(false);
+  const [cloudConnectError, setCloudConnectError] = useState<string | null>(null);
+  const [cloudAutoNeedsSetup, setCloudAutoNeedsSetup] = useState(false);
   const [isCloudBannerDismissed, setIsCloudBannerDismissed] = useState(false);
   const [lastSyncResult, setLastSyncResult] = useState<GoogleSheetsSyncResult | null>(() => {
     const saved = localStorage.getItem('pln_sheets_last_sync');
@@ -421,6 +431,73 @@ export default function App() {
     });
   }, [currentUser]);
 
+  const handlePullFromCloud = useCallback(async () => {
+    if (!currentUser) return;
+    setCloudSyncStatus({ status: 'syncing', message: 'Mengambil data terbaru dari Cloud...' });
+    const payload = await pullLatestFromCloud(currentUser, {
+      racks: latestSnapshotRef.current.racks,
+      simagUsers: latestSimagUsersRef.current,
+    });
+    latestSnapshotRef.current = {
+      racks: payload.racks,
+      cartons: payload.cartons,
+      meters: payload.meters,
+      outbounds: payload.outbounds,
+    };
+    latestSimagUsersRef.current = payload.simagUsers;
+    setRacks(payload.racks);
+    setCartons(payload.cartons);
+    setMeters(payload.meters);
+    setOutbounds(payload.outbounds);
+    setSimagUsers(payload.simagUsers);
+    overwriteLocalSimagUsers(payload.simagUsers);
+    setCloudSyncStatus({
+      status: 'synced',
+      message: 'Sinkronisasi dua arah aktif (Google AI Studio ⇄ Vercel)',
+      lastSyncedAt: payload.lastSyncedAt,
+    });
+  }, [currentUser]);
+
+  const startAutoCloudAuth = useCallback(async () => {
+    setIsConnectingCloud(true);
+    setCloudConnectError(null);
+    setCloudSyncStatus({
+      status: 'connecting',
+      message: 'Menghubungkan sinkronisasi otomatis dua arah...',
+    });
+    try {
+      const user = await ensureAutoCloudSession();
+      setCurrentUser(user);
+      setCloudAutoNeedsSetup(false);
+      setIsCloudBannerDismissed(false);
+    } catch (err: any) {
+      const msg = err?.message || 'Gagal menghubungkan sinkronisasi cloud otomatis.';
+      if (err instanceof CloudAutoAuthDisabledError) {
+        setCloudAutoNeedsSetup(true);
+      }
+      setCloudConnectError(msg);
+      setCloudSyncStatus({ status: 'error', message: msg });
+    } finally {
+      setIsConnectingCloud(false);
+    }
+  }, []);
+
+  const handleQuickCloudConnect = useCallback(async () => {
+    setIsConnectingCloud(true);
+    setCloudConnectError(null);
+    try {
+      const res = await googleCloudSignIn();
+      setCurrentUser(res.user);
+      setHasSheetsToken(res.hasSheetsToken);
+      setCloudAutoNeedsSetup(false);
+      setIsCloudBannerDismissed(false);
+    } catch (err: any) {
+      setCloudConnectError(err?.message || 'Gagal menghubungkan akun Google Cloud.');
+    } finally {
+      setIsConnectingCloud(false);
+    }
+  }, []);
+
   const handleSimagLogout = useCallback((expiredMessage?: string) => {
     logoutSimagSession();
     setSimagSession(null);
@@ -552,28 +629,37 @@ export default function App() {
     };
   }, [simagSession, isScannerOpen, scannerCallback, isInboundOpen, isOutboundOpen, isKassenModalOpen]);
 
-  // Initialize Firebase Google Auth listener
+  // Initialize Firebase Auth listener & automatic zero-click cloud sync session
   useEffect(() => {
     const unsubscribe = initAuth(
       (user, hasToken) => {
         setCurrentUser(user);
         setHasSheetsToken(hasToken);
+        setCloudAutoNeedsSetup(false);
+        setCloudConnectError(null);
       },
       () => {
         setCurrentUser(null);
         setHasSheetsToken(false);
-        setCloudSyncStatus({ status: 'disconnected' });
       }
     );
+
+    void startAutoCloudAuth();
+
+    const handleOnline = () => {
+      void startAutoCloudAuth();
+    };
+    window.addEventListener('online', handleOnline);
+
     return () => {
+      window.removeEventListener('online', handleOnline);
       if (unsubscribe) unsubscribe();
     };
-  }, []);
+  }, [startAutoCloudAuth]);
 
   // Two-way Real-Time Cloud Sync (Google AI Studio <-> Vercel via Firestore)
   useEffect(() => {
     if (!currentUser) {
-      setCloudSyncStatus({ status: 'disconnected' });
       return;
     }
 
@@ -1022,6 +1108,11 @@ export default function App() {
         onDismissNotice={() => setLoginNotice(null)}
         theme={theme}
         onToggleTheme={() => setTheme(prev => (prev === 'dark' ? 'light' : 'dark'))}
+        cloudUser={currentUser}
+        cloudStatus={cloudSyncStatus}
+        onConnectCloud={handleQuickCloudConnect}
+        isConnectingCloud={isConnectingCloud}
+        cloudError={cloudConnectError}
       />
     );
   }
@@ -1059,39 +1150,79 @@ export default function App() {
 
       {/* Main Body Content */}
       <main className="flex-1 max-w-7xl w-full min-w-0 mx-auto px-3 sm:px-6 py-5 pb-24 sm:pb-6 space-y-6">
-        {/* Cloud Two-Way Sync Prompt Banner when not connected yet */}
-        {!currentUser && !isCloudBannerDismissed && (
-          <div className="p-3.5 sm:px-4 rounded-2xl bg-cyan-50 dark:bg-cyan-950/30 border border-cyan-300 dark:border-cyan-500/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-start sm:items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-cyan-100 dark:bg-cyan-500/20 border border-cyan-200 dark:border-cyan-500/30 text-cyan-700 dark:text-cyan-300 flex items-center justify-center shrink-0">
-                <Cloud className="w-4 h-4" />
+        {/* One-time Firebase Console setup notice ONLY if Anonymous provider isn't enabled yet */}
+        {!currentUser && cloudAutoNeedsSetup && !isCloudBannerDismissed && (
+          <div className="p-3.5 sm:px-4 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-500/40 space-y-2.5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-start sm:items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-amber-100 dark:bg-amber-500/20 border border-amber-200 dark:border-amber-500/30 text-amber-700 dark:text-amber-300 flex items-center justify-center shrink-0">
+                  <Cloud className="w-4 h-4" />
+                </div>
+                <div>
+                  <p className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
+                    Aktifkan 1 Pengaturan di Firebase Console agar Sinkronisasi Otomatis Tanpa Klik
+                  </p>
+                  <p className="text-[11px] sm:text-xs text-slate-600 dark:text-slate-300">
+                    Buka{' '}
+                    <a
+                      href="https://console.firebase.google.com/project/gen-lang-client-0109040418/authentication/providers"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="underline font-bold text-amber-700 dark:text-amber-300"
+                    >
+                      Firebase Authentication → Sign-in method
+                    </a>{' '}
+                    lalu aktifkan provider <strong>Anonymous</strong>. Setelah aktif, Google AI Studio &amp; Vercel otomatis tersinkron tanpa klik tombol apapun.
+                  </p>
+                </div>
               </div>
+              <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                <button
+                  type="button"
+                  disabled={isConnectingCloud}
+                  onClick={() => void startAutoCloudAuth()}
+                  className="btn-tactile px-3 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white text-xs font-bold shadow-xs cursor-pointer"
+                >
+                  {isConnectingCloud ? 'Mencoba...' : 'Coba Otomatis Lagi'}
+                </button>
+                <button
+                  type="button"
+                  disabled={isConnectingCloud}
+                  onClick={() => void handleQuickCloudConnect()}
+                  className="btn-tactile px-3 py-2 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 text-xs font-semibold cursor-pointer"
+                >
+                  Masuk Google
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsCloudBannerDismissed(true)}
+                  className="p-1.5 rounded-lg text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white hover:bg-amber-100/70 dark:hover:bg-slate-800 cursor-pointer"
+                  title="Tutup sementara"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Cloud Sync Error Alert if Firestore reports an issue */}
+        {currentUser && cloudSyncStatus.status === 'error' && cloudSyncStatus.message && (
+          <div className="p-3.5 sm:px-4 rounded-2xl bg-rose-50 dark:bg-rose-950/30 border border-rose-300 dark:border-rose-500/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-start gap-2.5 text-xs text-rose-700 dark:text-rose-300">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-600 dark:text-rose-400" />
               <div>
-                <p className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
-                  Aktifkan Sinkronisasi Cloud Dua Arah (Google AI Studio ⇄ Vercel)
-                </p>
-                <p className="text-[11px] sm:text-xs text-slate-600 dark:text-slate-300">
-                  Data di browser ini masih tersimpan lokal. Hubungkan akun Google Anda agar stok, nama rak & transaksi antara Google AI Studio dan Vercel selalu sama secara real-time.
-                </p>
+                <p className="font-bold text-rose-800 dark:text-rose-200">Gangguan Sinkronisasi Cloud</p>
+                <p className="mt-0.5">{cloudSyncStatus.message}</p>
               </div>
             </div>
-            <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
-              <button
-                type="button"
-                onClick={() => setIsSheetsModalOpen(true)}
-                className="btn-tactile px-3.5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold shadow-xs cursor-pointer"
-              >
-                Hubungkan Cloud Sekarang
-              </button>
-              <button
-                type="button"
-                onClick={() => setIsCloudBannerDismissed(true)}
-                className="p-1.5 rounded-lg text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white hover:bg-cyan-100/70 dark:hover:bg-slate-800 cursor-pointer"
-                title="Tutup sementara"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => void handlePullFromCloud()}
+              className="btn-tactile px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shrink-0 cursor-pointer"
+            >
+              Coba Sinkronkan Ulang
+            </button>
           </div>
         )}
 
@@ -1272,6 +1403,7 @@ export default function App() {
         }}
         cloudSyncStatus={cloudSyncStatus}
         onForceUploadCloud={handleForceUploadCloud}
+        onPullFromCloud={handlePullFromCloud}
         lastSyncResult={lastSyncResult}
         autoSyncEnabled={autoSyncEnabled}
         onAutoSyncChange={setAutoSyncEnabled}

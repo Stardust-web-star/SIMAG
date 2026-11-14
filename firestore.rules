@@ -31,18 +31,30 @@ service cloud.firestore {
       return isVerifiedEmail() && request.auth.token.email == 'fikiilham56@gmail.com';
     }
 
-    function isOwnerOrAdmin(data) {
-      return isVerifiedEmail() && (isAdmin() || data.ownerUid == request.auth.uid);
+    function isSharedWorkspaceDoc(data) {
+      return isSignedIn() && (
+        isAdmin() ||
+        (('workspaceId' in data) && data.workspaceId == 'pln-ulp-baguala-simag') ||
+        (data.ownerUid is string && data.ownerUid > '')
+      );
+    }
+
+    function hasValidOptionalWorkspaceId(data) {
+      return !('workspaceId' in data) || (
+        data.workspaceId is string &&
+        data.workspaceId == 'pln-ulp-baguala-simag'
+      );
     }
 
     // 3. Entity Validation Blueprints
     function isValidWarehouseMeta(data) {
       return data.keys().hasAll(['initialized', 'resetVersion', 'ownerUid', 'serverCreatedAt', 'serverUpdatedAt']) &&
-        data.keys().hasOnly(['initialized', 'resetVersion', 'ownerUid', 'updatedBy', 'serverCreatedAt', 'serverUpdatedAt']) &&
+        data.keys().hasOnly(['initialized', 'resetVersion', 'ownerUid', 'workspaceId', 'updatedBy', 'serverCreatedAt', 'serverUpdatedAt']) &&
         data.initialized is bool &&
         data.resetVersion is number &&
         data.resetVersion >= 0 &&
         isValidId(data.ownerUid) &&
+        hasValidOptionalWorkspaceId(data) &&
         (!('updatedBy' in data) || (data.updatedBy is string && data.updatedBy.size() <= 120)) &&
         data.serverCreatedAt is timestamp &&
         data.serverUpdatedAt is timestamp;
@@ -50,7 +62,7 @@ service cloud.firestore {
 
     function isValidWarehouseRack(data) {
       return data.keys().hasAll(['id', 'name', 'zone', 'primaryBrand', 'shelves', 'ownerUid', 'serverCreatedAt', 'serverUpdatedAt']) &&
-        data.keys().hasOnly(['id', 'name', 'zone', 'primaryBrand', 'brandColor', 'shelves', 'ownerUid', 'serverCreatedAt', 'serverUpdatedAt']) &&
+        data.keys().hasOnly(['id', 'name', 'zone', 'primaryBrand', 'brandColor', 'shelves', 'ownerUid', 'workspaceId', 'serverCreatedAt', 'serverUpdatedAt']) &&
         isValidId(data.id) &&
         data.name is string && data.name.size() >= 1 && data.name.size() <= 120 &&
         data.zone is string && data.zone.size() >= 1 && data.zone.size() <= 120 &&
@@ -58,6 +70,7 @@ service cloud.firestore {
         (!('brandColor' in data) || (data.brandColor is string && data.brandColor.size() <= 32)) &&
         data.shelves is list && data.shelves.size() >= 1 && data.shelves.size() <= 8 && data.shelves[0] is map &&
         isValidId(data.ownerUid) &&
+        hasValidOptionalWorkspaceId(data) &&
         data.serverCreatedAt is timestamp &&
         data.serverUpdatedAt is timestamp;
     }
@@ -71,7 +84,7 @@ service cloud.firestore {
         data.keys().hasOnly([
           'id', 'cartonBarcode', 'brand', 'phase', 'category',
           'unitsCount', 'meterSerials', 'rackId', 'shelfLevel',
-          'dateInbound', 'receivedBy', 'notes', 'ownerUid', 'serverCreatedAt', 'serverUpdatedAt'
+          'dateInbound', 'receivedBy', 'notes', 'ownerUid', 'workspaceId', 'serverCreatedAt', 'serverUpdatedAt'
         ]) &&
         isValidId(data.id) &&
         data.cartonBarcode is string && data.cartonBarcode.size() >= 1 && data.cartonBarcode.size() <= 128 &&
@@ -87,6 +100,7 @@ service cloud.firestore {
         data.receivedBy is string && data.receivedBy.size() >= 1 && data.receivedBy.size() <= 120 &&
         (!('notes' in data) || (data.notes is string && data.notes.size() <= 500)) &&
         isValidId(data.ownerUid) &&
+        hasValidOptionalWorkspaceId(data) &&
         data.serverCreatedAt is timestamp &&
         data.serverUpdatedAt is timestamp;
     }
@@ -100,7 +114,7 @@ service cloud.firestore {
         data.keys().hasOnly([
           'serialNumber', 'brand', 'phase', 'category', 'cartonBarcode',
           'rackId', 'shelfLevel', 'dateInbound', 'status', 'dispatchId',
-          'ownerUid', 'serverCreatedAt', 'serverUpdatedAt'
+          'ownerUid', 'workspaceId', 'serverCreatedAt', 'serverUpdatedAt'
         ]) &&
         data.serialNumber is string && data.serialNumber.size() >= 1 && data.serialNumber.size() <= 128 &&
         data.brand is string && data.brand.size() >= 1 && data.brand.size() <= 100 &&
@@ -113,6 +127,7 @@ service cloud.firestore {
         data.status in ['AVAILABLE', 'DISPATCHED', 'QUARANTINE'] &&
         (!('dispatchId' in data) || (data.dispatchId is string && data.dispatchId.size() <= 128)) &&
         isValidId(data.ownerUid) &&
+        hasValidOptionalWorkspaceId(data) &&
         data.serverCreatedAt is timestamp &&
         data.serverUpdatedAt is timestamp;
     }
@@ -128,7 +143,7 @@ service cloud.firestore {
           'nomorAgenda', 'nama', 'tarif', 'daya', 'snKwhMeter', 'snMcb',
           'segel', 'kabelTw', 'petugas', 'gmKategori', 'gmKeterangan',
           'noMeterLama', 'standMeterLama', 'snSegelLama', 'meterBrand',
-          'meterCategory', 'rackSource', 'ownerUid', 'serverCreatedAt', 'serverUpdatedAt'
+          'meterCategory', 'rackSource', 'ownerUid', 'workspaceId', 'serverCreatedAt', 'serverUpdatedAt'
         ]) &&
         isValidId(data.id) &&
         data.tanggal is string && data.tanggal.size() >= 1 && data.tanggal.size() <= 64 &&
@@ -153,6 +168,7 @@ service cloud.firestore {
         (!('meterCategory' in data) || (data.meterCategory is string && data.meterCategory.size() <= 80)) &&
         (!('rackSource' in data) || (data.rackSource is string && data.rackSource.size() <= 120)) &&
         isValidId(data.ownerUid) &&
+        hasValidOptionalWorkspaceId(data) &&
         data.serverCreatedAt is timestamp &&
         data.serverUpdatedAt is timestamp;
     }
@@ -164,7 +180,7 @@ service cloud.firestore {
         ]) &&
         data.keys().hasOnly([
           'id', 'nip', 'nama', 'role', 'passwordHash',
-          'createdAt', 'updatedAt', 'lastLoginAt', 'ownerUid', 'serverCreatedAt', 'serverUpdatedAt'
+          'createdAt', 'updatedAt', 'lastLoginAt', 'ownerUid', 'workspaceId', 'serverCreatedAt', 'serverUpdatedAt'
         ]) &&
         isValidId(data.id) &&
         data.nip is string && data.nip.size() >= 1 && data.nip.size() <= 32 &&
@@ -175,122 +191,129 @@ service cloud.firestore {
         data.updatedAt is string && data.updatedAt.size() >= 1 && data.updatedAt.size() <= 64 &&
         (!('lastLoginAt' in data) || (data.lastLoginAt is string && data.lastLoginAt.size() <= 64)) &&
         isValidId(data.ownerUid) &&
+        hasValidOptionalWorkspaceId(data) &&
         data.serverCreatedAt is timestamp &&
         data.serverUpdatedAt is timestamp;
     }
 
     // 4. Collection Rules
     match /warehouse_meta/{docId} {
-      allow get: if isValidId(docId) && isVerifiedEmail() && (resource == null || isAdmin() || existing().ownerUid == request.auth.uid);
-      allow list: if isVerifiedEmail() && (isAdmin() || existing().ownerUid == request.auth.uid);
-      allow create: if isValidId(docId) && isVerifiedEmail() &&
+      allow get: if isValidId(docId) && isSignedIn() && (resource == null || isSharedWorkspaceDoc(existing()));
+      allow list: if isSignedIn() && (isAdmin() || existing().workspaceId == 'pln-ulp-baguala-simag' || existing().ownerUid > '');
+      allow create: if isValidId(docId) && isSignedIn() &&
         isValidWarehouseMeta(incoming()) &&
         incoming().ownerUid == request.auth.uid &&
+        incoming().workspaceId == 'pln-ulp-baguala-simag' &&
         incoming().serverCreatedAt == request.time &&
         incoming().serverUpdatedAt == request.time;
-      allow update: if isValidId(docId) && isVerifiedEmail() &&
+      allow update: if isValidId(docId) && isSignedIn() &&
         isValidWarehouseMeta(incoming()) &&
-        (isAdmin() || existing().ownerUid == request.auth.uid) &&
+        isSharedWorkspaceDoc(existing()) &&
         incoming().ownerUid == existing().ownerUid &&
         incoming().serverCreatedAt == existing().serverCreatedAt &&
         incoming().serverUpdatedAt == request.time &&
-        (isAdmin() || incoming().diff(existing()).affectedKeys().hasOnly(['initialized', 'resetVersion', 'updatedBy', 'serverUpdatedAt']));
-      allow delete: if isValidId(docId) && isOwnerOrAdmin(existing());
+        (isAdmin() || incoming().diff(existing()).affectedKeys().hasOnly(['initialized', 'resetVersion', 'updatedBy', 'workspaceId', 'serverUpdatedAt']));
+      allow delete: if isValidId(docId) && isSharedWorkspaceDoc(existing());
     }
 
     match /warehouse_racks/{rackId} {
-      allow get: if isValidId(rackId) && isOwnerOrAdmin(existing());
-      allow list: if isVerifiedEmail() && (isAdmin() || existing().ownerUid == request.auth.uid);
-      allow create: if isValidId(rackId) && isVerifiedEmail() &&
+      allow get: if isValidId(rackId) && isSharedWorkspaceDoc(existing());
+      allow list: if isSignedIn() && (isAdmin() || existing().workspaceId == 'pln-ulp-baguala-simag' || existing().ownerUid > '');
+      allow create: if isValidId(rackId) && isSignedIn() &&
         isValidWarehouseRack(incoming()) &&
         incoming().ownerUid == request.auth.uid &&
+        incoming().workspaceId == 'pln-ulp-baguala-simag' &&
         incoming().serverCreatedAt == request.time &&
         incoming().serverUpdatedAt == request.time;
-      allow update: if isValidId(rackId) && isVerifiedEmail() &&
+      allow update: if isValidId(rackId) && isSignedIn() &&
         isValidWarehouseRack(incoming()) &&
-        (isAdmin() || existing().ownerUid == request.auth.uid) &&
+        isSharedWorkspaceDoc(existing()) &&
         incoming().ownerUid == existing().ownerUid &&
         incoming().id == existing().id &&
         incoming().serverCreatedAt == existing().serverCreatedAt &&
         incoming().serverUpdatedAt == request.time &&
-        (isAdmin() || incoming().diff(existing()).affectedKeys().hasOnly(['name', 'zone', 'primaryBrand', 'brandColor', 'shelves', 'serverUpdatedAt']));
-      allow delete: if isValidId(rackId) && isOwnerOrAdmin(existing());
+        (isAdmin() || incoming().diff(existing()).affectedKeys().hasOnly(['name', 'zone', 'primaryBrand', 'brandColor', 'shelves', 'workspaceId', 'serverUpdatedAt']));
+      allow delete: if isValidId(rackId) && isSharedWorkspaceDoc(existing());
     }
 
     match /warehouse_cartons/{cartonId} {
-      allow get: if isValidId(cartonId) && isOwnerOrAdmin(existing());
-      allow list: if isVerifiedEmail() && (isAdmin() || existing().ownerUid == request.auth.uid);
-      allow create: if isValidId(cartonId) && isVerifiedEmail() &&
+      allow get: if isValidId(cartonId) && isSharedWorkspaceDoc(existing());
+      allow list: if isSignedIn() && (isAdmin() || existing().workspaceId == 'pln-ulp-baguala-simag' || existing().ownerUid > '');
+      allow create: if isValidId(cartonId) && isSignedIn() &&
         isValidInboundCarton(incoming()) &&
         incoming().ownerUid == request.auth.uid &&
+        incoming().workspaceId == 'pln-ulp-baguala-simag' &&
         incoming().serverCreatedAt == request.time &&
         incoming().serverUpdatedAt == request.time;
-      allow update: if isValidId(cartonId) && isVerifiedEmail() &&
+      allow update: if isValidId(cartonId) && isSignedIn() &&
         isValidInboundCarton(incoming()) &&
-        (isAdmin() || existing().ownerUid == request.auth.uid) &&
+        isSharedWorkspaceDoc(existing()) &&
         incoming().ownerUid == existing().ownerUid &&
         incoming().id == existing().id &&
         incoming().serverCreatedAt == existing().serverCreatedAt &&
         incoming().serverUpdatedAt == request.time &&
-        (isAdmin() || incoming().diff(existing()).affectedKeys().hasOnly(['brand', 'unitsCount', 'meterSerials', 'rackId', 'shelfLevel', 'notes', 'serverUpdatedAt']));
-      allow delete: if isValidId(cartonId) && isOwnerOrAdmin(existing());
+        (isAdmin() || incoming().diff(existing()).affectedKeys().hasOnly(['brand', 'unitsCount', 'meterSerials', 'rackId', 'shelfLevel', 'notes', 'workspaceId', 'serverUpdatedAt']));
+      allow delete: if isValidId(cartonId) && isSharedWorkspaceDoc(existing());
     }
 
     match /warehouse_meters/{meterId} {
-      allow get: if isValidId(meterId) && isOwnerOrAdmin(existing());
-      allow list: if isVerifiedEmail() && (isAdmin() || existing().ownerUid == request.auth.uid);
-      allow create: if isValidId(meterId) && isVerifiedEmail() &&
+      allow get: if isValidId(meterId) && isSharedWorkspaceDoc(existing());
+      allow list: if isSignedIn() && (isAdmin() || existing().workspaceId == 'pln-ulp-baguala-simag' || existing().ownerUid > '');
+      allow create: if isValidId(meterId) && isSignedIn() &&
         isValidMeterUnit(incoming()) &&
         incoming().ownerUid == request.auth.uid &&
+        incoming().workspaceId == 'pln-ulp-baguala-simag' &&
         incoming().serverCreatedAt == request.time &&
         incoming().serverUpdatedAt == request.time;
-      allow update: if isValidId(meterId) && isVerifiedEmail() &&
+      allow update: if isValidId(meterId) && isSignedIn() &&
         isValidMeterUnit(incoming()) &&
-        (isAdmin() || existing().ownerUid == request.auth.uid) &&
+        isSharedWorkspaceDoc(existing()) &&
         incoming().ownerUid == existing().ownerUid &&
         incoming().serialNumber == existing().serialNumber &&
         incoming().serverCreatedAt == existing().serverCreatedAt &&
         incoming().serverUpdatedAt == request.time &&
-        (isAdmin() || incoming().diff(existing()).affectedKeys().hasOnly(['brand', 'rackId', 'shelfLevel', 'status', 'dispatchId', 'serverUpdatedAt']));
-      allow delete: if isValidId(meterId) && isOwnerOrAdmin(existing());
+        (isAdmin() || incoming().diff(existing()).affectedKeys().hasOnly(['brand', 'rackId', 'shelfLevel', 'status', 'dispatchId', 'workspaceId', 'serverUpdatedAt']));
+      allow delete: if isValidId(meterId) && isSharedWorkspaceDoc(existing());
     }
 
     match /warehouse_outbounds/{outboundId} {
-      allow get: if isValidId(outboundId) && isOwnerOrAdmin(existing());
-      allow list: if isVerifiedEmail() && (isAdmin() || existing().ownerUid == request.auth.uid);
-      allow create: if isValidId(outboundId) && isVerifiedEmail() &&
+      allow get: if isValidId(outboundId) && isSharedWorkspaceDoc(existing());
+      allow list: if isSignedIn() && (isAdmin() || existing().workspaceId == 'pln-ulp-baguala-simag' || existing().ownerUid > '');
+      allow create: if isValidId(outboundId) && isSignedIn() &&
         isValidOutboundRecord(incoming()) &&
         incoming().ownerUid == request.auth.uid &&
+        incoming().workspaceId == 'pln-ulp-baguala-simag' &&
         incoming().serverCreatedAt == request.time &&
         incoming().serverUpdatedAt == request.time;
-      allow update: if isValidId(outboundId) && isVerifiedEmail() &&
+      allow update: if isValidId(outboundId) && isSignedIn() &&
         isValidOutboundRecord(incoming()) &&
-        (isAdmin() || existing().ownerUid == request.auth.uid) &&
+        isSharedWorkspaceDoc(existing()) &&
         incoming().ownerUid == existing().ownerUid &&
         incoming().id == existing().id &&
         incoming().serverCreatedAt == existing().serverCreatedAt &&
         incoming().serverUpdatedAt == request.time &&
-        (isAdmin() || incoming().diff(existing()).affectedKeys().hasOnly(['gmKeterangan', 'serverUpdatedAt']));
-      allow delete: if isValidId(outboundId) && isOwnerOrAdmin(existing());
+        (isAdmin() || incoming().diff(existing()).affectedKeys().hasOnly(['gmKeterangan', 'workspaceId', 'serverUpdatedAt']));
+      allow delete: if isValidId(outboundId) && isSharedWorkspaceDoc(existing());
     }
 
     match /simag_users/{userId} {
-      allow get: if isValidId(userId) && isOwnerOrAdmin(existing());
-      allow list: if isVerifiedEmail() && (isAdmin() || existing().ownerUid == request.auth.uid);
-      allow create: if isValidId(userId) && isVerifiedEmail() &&
+      allow get: if isValidId(userId) && isSharedWorkspaceDoc(existing());
+      allow list: if isSignedIn() && (isAdmin() || existing().workspaceId == 'pln-ulp-baguala-simag' || existing().ownerUid > '');
+      allow create: if isValidId(userId) && isSignedIn() &&
         isValidSimagUser(incoming()) &&
         incoming().ownerUid == request.auth.uid &&
+        incoming().workspaceId == 'pln-ulp-baguala-simag' &&
         incoming().serverCreatedAt == request.time &&
         incoming().serverUpdatedAt == request.time;
-      allow update: if isValidId(userId) && isVerifiedEmail() &&
+      allow update: if isValidId(userId) && isSignedIn() &&
         isValidSimagUser(incoming()) &&
-        (isAdmin() || existing().ownerUid == request.auth.uid) &&
+        isSharedWorkspaceDoc(existing()) &&
         incoming().ownerUid == existing().ownerUid &&
         incoming().id == existing().id &&
         incoming().serverCreatedAt == existing().serverCreatedAt &&
         incoming().serverUpdatedAt == request.time &&
-        (isAdmin() || incoming().diff(existing()).affectedKeys().hasOnly(['nama', 'role', 'passwordHash', 'updatedAt', 'lastLoginAt', 'serverUpdatedAt']));
-      allow delete: if isValidId(userId) && isOwnerOrAdmin(existing());
+        (isAdmin() || incoming().diff(existing()).affectedKeys().hasOnly(['nama', 'role', 'passwordHash', 'updatedAt', 'lastLoginAt', 'workspaceId', 'serverUpdatedAt']));
+      allow delete: if isValidId(userId) && isSharedWorkspaceDoc(existing());
     }
   }
 }
