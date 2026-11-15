@@ -165,11 +165,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
               <p className="mt-1 text-xs font-bold tracking-wider text-emerald-300 uppercase">
                 SISTEM MANAJEMEN GUDANG
               </p>
-              <p className="mt-1 text-xs sm:text-[13px] font-semibold text-cyan-100/95">
-                Pemantauan Stok &amp; Pelacakan Rak kWh Meter PLN
-              </p>
               <p className="mt-4 text-xs text-slate-200/80 leading-relaxed">
-                Sistem Terpadu Manajemen Stok Material Distribusi, Pelacakan Rak Karton &amp; Transaksi kWh Meter ULP Baguala PT PLN (Persero).
+                Sistem Terpadu Manajemen Stok Material Distribusi ULP Baguala PT PLN (Persero).
               </p>
             </div>
           </div>

@@ -52,6 +52,7 @@ import {
   ensureSeededUsers,
   getActiveSimagSession,
   logoutSimagSession,
+  markSimagTabUnload,
   saveSimagUsersLocally,
   touchSimagSessionActivity,
 } from './services/simagAuthService';
@@ -464,12 +465,11 @@ export default function App() {
     };
     document.addEventListener('visibilitychange', onVisibilityChange);
 
-    const onStorageSync = (e: StorageEvent) => {
-      if (e.key === 'pln_simag_session_v1' && !e.newValue) {
-        handleSimagLogout('Sesi SIMAG Anda telah berakhir. Silakan login kembali.');
-      }
+    const onTabUnload = () => {
+      markSimagTabUnload();
     };
-    window.addEventListener('storage', onStorageSync);
+    window.addEventListener('pagehide', onTabUnload);
+    window.addEventListener('beforeunload', onTabUnload);
 
     const timerId = window.setInterval(checkInactivity, 1000);
 
@@ -478,7 +478,8 @@ export default function App() {
         window.removeEventListener(evt, onActivity);
       });
       document.removeEventListener('visibilitychange', onVisibilityChange);
-      window.removeEventListener('storage', onStorageSync);
+      window.removeEventListener('pagehide', onTabUnload);
+      window.removeEventListener('beforeunload', onTabUnload);
       window.clearInterval(timerId);
     };
   }, [simagSession, recordSimagActivity, handleSimagLogout]);

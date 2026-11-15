@@ -12,6 +12,7 @@ import {
 const USERS_STORAGE_KEY = 'pln_simag_users_v1';
 const SEEDED_FLAG_KEY = 'pln_simag_users_seeded_v1';
 const SESSION_STORAGE_KEY = 'pln_simag_session_v1';
+const TAB_UNLOAD_MARKER_KEY = 'pln_simag_tab_unload_v1';
 
 export const INACTIVITY_TIMEOUT_MS = 5 * 60 * 1000; // 5 menit
 
@@ -197,16 +198,51 @@ export function authenticateSimagUser(
     loginAt: nowIso,
     lastActivityAt: Date.now(),
   };
-  localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+  localStorage.removeItem(SESSION_STORAGE_KEY);
+  sessionStorage.removeItem(TAB_UNLOAD_MARKER_KEY);
+  sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
 
   return { ok: true, session, users: updatedUsers };
+}
+
+function getNavigationType(): string | undefined {
+  try {
+    const entries = performance.getEntriesByType('navigation') as PerformanceNavigationTiming[];
+    return entries?.[0]?.type;
+  } catch {
+    return undefined;
+  }
+}
+
+export function markSimagTabUnload(): void {
+  try {
+    if (sessionStorage.getItem(SESSION_STORAGE_KEY)) {
+      sessionStorage.setItem(TAB_UNLOAD_MARKER_KEY, String(Date.now()));
+    }
+  } catch {
+    // Ignore storage errors during unload
+  }
 }
 
 export function getActiveSimagSession(): {
   session: SimagSession | null;
   expiredByInactivity: boolean;
 } {
-  const raw = localStorage.getItem(SESSION_STORAGE_KEY);
+  // Always clear any legacy persistent localStorage session so closing a tab always logs out
+  localStorage.removeItem(SESSION_STORAGE_KEY);
+
+  const unloadMarker = sessionStorage.getItem(TAB_UNLOAD_MARKER_KEY);
+  if (unloadMarker) {
+    sessionStorage.removeItem(TAB_UNLOAD_MARKER_KEY);
+    const elapsedMs = Date.now() - Number(unloadMarker);
+    // Keep session only on active in-tab reload; log out when tab was closed or restored later
+    if (getNavigationType() !== 'reload' || !Number.isFinite(elapsedMs) || elapsedMs > 15000) {
+      sessionStorage.removeItem(SESSION_STORAGE_KEY);
+      return { session: null, expiredByInactivity: false };
+    }
+  }
+
+  const raw = sessionStorage.getItem(SESSION_STORAGE_KEY);
   if (!raw) {
     return { session: null, expiredByInactivity: false };
   }
@@ -214,7 +250,7 @@ export function getActiveSimagSession(): {
   try {
     const parsed: SimagSession = JSON.parse(raw);
     if (!parsed?.userId || !parsed?.nip || typeof parsed.lastActivityAt !== 'number') {
-      localStorage.removeItem(SESSION_STORAGE_KEY);
+      sessionStorage.removeItem(SESSION_STORAGE_KEY);
       return { session: null, expiredByInactivity: false };
     }
 
@@ -222,12 +258,12 @@ export function getActiveSimagSession(): {
     const users = ensureSeededUsers();
     const stillExists = users.find(u => u.id === parsed.userId);
     if (!stillExists) {
-      localStorage.removeItem(SESSION_STORAGE_KEY);
+      sessionStorage.removeItem(SESSION_STORAGE_KEY);
       return { session: null, expiredByInactivity: false };
     }
 
     if (Date.now() - parsed.lastActivityAt >= INACTIVITY_TIMEOUT_MS) {
-      localStorage.removeItem(SESSION_STORAGE_KEY);
+      sessionStorage.removeItem(SESSION_STORAGE_KEY);
       return { session: null, expiredByInactivity: true };
     }
 
@@ -239,18 +275,18 @@ export function getActiveSimagSession(): {
     };
     return { session: syncedSession, expiredByInactivity: false };
   } catch {
-    localStorage.removeItem(SESSION_STORAGE_KEY);
+    sessionStorage.removeItem(SESSION_STORAGE_KEY);
     return { session: null, expiredByInactivity: false };
   }
 }
 
 export function touchSimagSessionActivity(timestamp = Date.now()): void {
-  const raw = localStorage.getItem(SESSION_STORAGE_KEY);
+  const raw = sessionStorage.getItem(SESSION_STORAGE_KEY);
   if (!raw) return;
   try {
     const parsed: SimagSession = JSON.parse(raw);
     parsed.lastActivityAt = timestamp;
-    localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(parsed));
+    sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(parsed));
   } catch {
     // Ignore malformed session
   }
@@ -258,6 +294,8 @@ export function touchSimagSessionActivity(timestamp = Date.now()): void {
 
 export function logoutSimagSession(): void {
   localStorage.removeItem(SESSION_STORAGE_KEY);
+  sessionStorage.removeItem(SESSION_STORAGE_KEY);
+  sessionStorage.removeItem(TAB_UNLOAD_MARKER_KEY);
 }
 
 export function createSimagUser(

@@ -116,10 +116,10 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
           <div className="min-w-0">
             <h1 className="font-extrabold text-sm sm:text-base text-slate-900 dark:text-white tracking-tight leading-tight truncate">
-              SIMAG PLN <span className="text-cyan-600 dark:text-cyan-400 font-semibold text-xs sm:text-sm">kWh Meter</span>
+              SIMAG PLN
             </h1>
             <p className="text-[11px] text-slate-500 dark:text-slate-400 hidden sm:block truncate">
-              Sistem Manajemen Stok & Pelacakan Rak Material Distribusi
+              Sistem Manajemen Gudang Material Distribusi
             </p>
           </div>
         </div>
