@@ -150,10 +150,54 @@ export interface InboundCarton {
   meterSerials: string[];
   rackId: string;
   shelfLevel: number;
+  slotNumber?: number; // 1 to 16 physical slot index on shelf
   dateInbound: string;
   receivedBy: string;
   notes?: string;
 }
+
+export interface ResolvedShelfSlot {
+  slotNumber: number;
+  carton: InboundCarton | null;
+}
+
+/**
+ * Resolves physical slot positions (1..capacity) for cartons on a shelf.
+ * Cartons with an explicit valid slotNumber are placed directly in their chosen slot;
+ * legacy cartons without slotNumber fill remaining empty slots from #1 onward.
+ */
+export const resolveShelfSlots = (
+  shelfCartons: InboundCarton[],
+  capacity = 16
+): ResolvedShelfSlot[] => {
+  const slots: (InboundCarton | null)[] = Array.from({ length: capacity }, () => null);
+  const unassigned: InboundCarton[] = [];
+
+  for (const carton of shelfCartons) {
+    const rawSlot = typeof carton.slotNumber === 'number' ? Math.trunc(carton.slotNumber) : NaN;
+    if (Number.isFinite(rawSlot) && rawSlot >= 1 && rawSlot <= capacity && !slots[rawSlot - 1]) {
+      slots[rawSlot - 1] = carton;
+    } else {
+      unassigned.push(carton);
+    }
+  }
+
+  let nextIdx = 0;
+  for (const carton of unassigned) {
+    while (nextIdx < capacity && slots[nextIdx] !== null) {
+      nextIdx++;
+    }
+    if (nextIdx < capacity) {
+      slots[nextIdx] = carton;
+      nextIdx++;
+    }
+  }
+
+  return slots.map((carton, idx) => ({
+    slotNumber: idx + 1,
+    carton,
+  }));
+};
 
 export type OutboundType = 'PB' | 'GM';
 export type GantiMeterCategory = 'METER_GANGGUAN' | 'METER_TUA';

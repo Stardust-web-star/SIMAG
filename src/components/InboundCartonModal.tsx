@@ -12,7 +12,8 @@ import {
   getBrandConfig, 
   WarehouseRack, 
   InboundCarton, 
-  MeterUnit 
+  MeterUnit,
+  resolveShelfSlots
 } from '../types/warehouse';
 import { 
   X, 
@@ -69,14 +70,30 @@ export const InboundCartonModal: React.FC<InboundCartonModalProps> = ({
   const [startSerial, setStartSerial] = useState<string>('');
   const [generatedSerials, setGeneratedSerials] = useState<string[]>([]);
   const [targetLevel, setTargetLevel] = useState<number>(1);
+  const [targetSlotNumber, setTargetSlotNumber] = useState<number | null>(1);
   const [receivedBy, setReceivedBy] = useState<string>('Acho');
   const [notes, setNotes] = useState<string>('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Sync target rack, shelf level, brand dedication, and reset fields whenever modal opens
+  const pickBestSlotForShelf = (rackId: string, level: number, preferredSlot?: number | null): number | null => {
+    const rack = racks.find(r => r.id === rackId);
+    const shelf = rack?.shelves.find(s => s.level === level);
+    const cap = shelf?.cartonCapacity || 16;
+    const shelfCartons = existingCartons.filter(c => c.rackId === rackId && c.shelfLevel === level);
+    const resolved = resolveShelfSlots(shelfCartons, cap);
+    if (preferredSlot && preferredSlot >= 1 && preferredSlot <= cap) {
+      const target = resolved.find(s => s.slotNumber === preferredSlot);
+      if (target && !target.carton) return preferredSlot;
+    }
+    const firstEmpty = resolved.find(s => !s.carton);
+    return firstEmpty ? firstEmpty.slotNumber : null;
+  };
+
+  // Sync target rack, shelf level, slot number, brand dedication, and reset fields whenever modal opens
   useEffect(() => {
     if (isOpen) {
       const resolvedRackId = initialRackId || racks[0]?.id || 'RAK-A';
+      const resolvedLevel = initialLevel ?? 1;
       const currentRack = racks.find(r => r.id === resolvedRackId) || racks[0];
       if (currentRack) {
         setTargetRackId(currentRack.id);
@@ -87,7 +104,8 @@ export const InboundCartonModal: React.FC<InboundCartonModalProps> = ({
         setTargetRackId(resolvedRackId);
         setUnitsCount(10);
       }
-      setTargetLevel(initialLevel ?? 1);
+      setTargetLevel(resolvedLevel);
+      setTargetSlotNumber(pickBestSlotForShelf(resolvedRackId, resolvedLevel, initialSlotNumber));
       setIsBrandManuallyEdited(false);
       setCartonBarcode('');
       setStartSerial('');
@@ -95,11 +113,12 @@ export const InboundCartonModal: React.FC<InboundCartonModalProps> = ({
       setNotes('');
       setErrorMsg(null);
     }
-  }, [isOpen, initialRackId, initialLevel]);
+  }, [isOpen, initialRackId, initialLevel, initialSlotNumber]);
 
   // When rack changes and user hasn't manually typed a brand yet, adjust brand to match rack dedication
   const handleRackChange = (newRackId: string) => {
     setTargetRackId(newRackId);
+    setTargetSlotNumber(prev => pickBestSlotForShelf(newRackId, targetLevel, prev));
     if (!isBrandManuallyEdited) {
       const matchedRack = racks.find(r => r.id === newRackId);
       if (matchedRack?.primaryBrand) {
@@ -111,6 +130,11 @@ export const InboundCartonModal: React.FC<InboundCartonModalProps> = ({
         }
       }
     }
+  };
+
+  const handleLevelChange = (newLevel: number) => {
+    setTargetLevel(newLevel);
+    setTargetSlotNumber(prev => pickBestSlotForShelf(targetRackId, newLevel, prev));
   };
 
   // Recompute consecutive serial numbers
@@ -206,11 +230,15 @@ export const InboundCartonModal: React.FC<InboundCartonModalProps> = ({
     };
   }, [isOpen, cartonBarcode, unitsCount]);
 
-  // Check target shelf capacity
+  // Check target shelf capacity & resolve all 16 visual slots
   const targetRack = racks.find(r => r.id === targetRackId);
   const targetShelf = targetRack?.shelves.find(s => s.level === targetLevel);
+  const shelfCapacity = targetShelf?.cartonCapacity || 16;
   const currentCartonsInShelf = existingCartons.filter(c => c.rackId === targetRackId && c.shelfLevel === targetLevel);
-  const isShelfFull = targetShelf ? currentCartonsInShelf.length >= targetShelf.cartonCapacity : false;
+  const resolvedShelfSlots = resolveShelfSlots(currentCartonsInShelf, shelfCapacity);
+  const isShelfFull = currentCartonsInShelf.length >= shelfCapacity;
+  const activeSlotObj = targetSlotNumber ? resolvedShelfSlots.find(s => s.slotNumber === targetSlotNumber) : null;
+  const isSelectedSlotTaken = Boolean(activeSlotObj?.carton);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -248,6 +276,11 @@ export const InboundCartonModal: React.FC<InboundCartonModalProps> = ({
       return;
     }
 
+    if (!targetSlotNumber || isSelectedSlotTaken) {
+      setErrorMsg('Silakan pilih posisi slot dus yang masih kosong pada tingkat rak ini.');
+      return;
+    }
+
     const resolvedBrand = brand.trim() || targetRack?.primaryBrand || '';
     if (!resolvedBrand) {
       setErrorMsg('Merek kWh Meter wajib diisi.');
@@ -268,6 +301,7 @@ export const InboundCartonModal: React.FC<InboundCartonModalProps> = ({
       meterSerials: generatedSerials,
       rackId: targetRackId,
       shelfLevel: targetLevel,
+      slotNumber: targetSlotNumber,
       dateInbound: nowStr,
       receivedBy: receivedBy.trim(),
       notes: notes.trim(),
@@ -336,12 +370,12 @@ export const InboundCartonModal: React.FC<InboundCartonModalProps> = ({
 
         {/* Form Body */}
         <form onSubmit={handleSubmit} className="p-5 overflow-y-auto space-y-4 flex-1">
-          {initialSlotNumber && (
+          {targetSlotNumber && (
             <div className="p-3 bg-cyan-50 dark:bg-cyan-950/50 border border-cyan-200 dark:border-cyan-500/40 rounded-xl text-xs text-cyan-900 dark:text-cyan-200 flex items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <Layers className="w-4 h-4 text-cyan-600 dark:text-cyan-400 shrink-0" />
                 <span>
-                  Mengisi <strong className="text-slate-900 dark:text-white">Slot Dus #{initialSlotNumber}</strong> di{' '}
+                  Mengisi <strong className="text-slate-900 dark:text-white">Slot Dus #{targetSlotNumber}</strong> di{' '}
                   <strong className="font-mono text-cyan-700 dark:text-cyan-300">{targetRackId}</strong> •{' '}
                   <strong className="text-slate-900 dark:text-white">
                     Tingkat {targetLevel} ({targetLevel === 1 ? 'Atas' : targetLevel === 4 ? 'Bawah' : 'Tengah'})
@@ -349,7 +383,7 @@ export const InboundCartonModal: React.FC<InboundCartonModalProps> = ({
                 </span>
               </div>
               <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-100 dark:bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-500/30 shrink-0">
-                Slot Terpilih
+                Baris {targetSlotNumber <= 8 ? 1 : 2} • Kolom {((targetSlotNumber - 1) % 8) + 1}
               </span>
             </div>
           )}
@@ -592,12 +626,12 @@ export const InboundCartonModal: React.FC<InboundCartonModalProps> = ({
                   Tingkat Rak (Level):
                 </label>
                 <span className={`text-[11px] whitespace-nowrap tabular-nums ${isShelfFull ? 'text-rose-600 dark:text-rose-400 font-bold' : 'text-slate-500 dark:text-slate-400'}`}>
-                  Terisi: {currentCartonsInShelf.length}/{targetShelf?.cartonCapacity || 16} Dus
+                  Terisi: {currentCartonsInShelf.length}/{shelfCapacity} Dus
                 </span>
               </div>
               <select
                 value={targetLevel}
-                onChange={(e) => setTargetLevel(Number(e.target.value))}
+                onChange={(e) => handleLevelChange(Number(e.target.value))}
                 className="w-full h-10 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 focus:border-cyan-500 dark:focus:border-cyan-400 text-xs sm:text-sm text-slate-900 dark:text-slate-200 rounded-xl px-3 focus:outline-none"
               >
                 <option value={1}>Tingkat 1 (Atas)</option>
@@ -606,6 +640,60 @@ export const InboundCartonModal: React.FC<InboundCartonModalProps> = ({
                 <option value={4}>Tingkat 4 (Bawah)</option>
               </select>
             </div>
+          </div>
+
+          {/* Section 4B: Interactive 16-Slot Position Selector */}
+          <div className="bg-slate-50 dark:bg-slate-950/60 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2.5">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                <Layers className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
+                <span>Pilih Posisi Slot Dus pada Tingkat {targetLevel}:</span>
+              </label>
+              <span className="text-[11px] font-mono text-cyan-600 dark:text-cyan-400 font-semibold">
+                {targetSlotNumber
+                  ? `Slot #${targetSlotNumber} (${targetSlotNumber <= 8 ? 'Baris Atas' : 'Baris Bawah'} • Kolom ${((targetSlotNumber - 1) % 8) + 1})`
+                  : 'Tingkat rak penuh'}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-4 sm:grid-cols-8 gap-1.5">
+              {resolvedShelfSlots.map(({ slotNumber, carton }) => {
+                const isSelected = targetSlotNumber === slotNumber && !carton;
+                if (carton) {
+                  return (
+                    <div
+                      key={slotNumber}
+                      title={`Slot #${slotNumber} sudah terisi (${carton.cartonBarcode})`}
+                      className="h-9 rounded-lg border border-slate-300 dark:border-slate-700/70 bg-slate-200/80 dark:bg-slate-800/70 text-slate-500 dark:text-slate-400 flex flex-col items-center justify-center text-[9px] font-mono cursor-not-allowed opacity-70"
+                    >
+                      <Box className="w-2.5 h-2.5" />
+                      <span className="leading-none mt-0.5 font-semibold">#{slotNumber} ({carton.unitsCount}p)</span>
+                    </div>
+                  );
+                }
+                return (
+                  <button
+                    key={slotNumber}
+                    type="button"
+                    onClick={() => setTargetSlotNumber(slotNumber)}
+                    title={`Pilih Slot Dus #${slotNumber} (Baris ${slotNumber <= 8 ? 'Atas' : 'Bawah'}, Kolom ${((slotNumber - 1) % 8) + 1})`}
+                    className={`btn-tactile h-9 rounded-lg flex flex-col items-center justify-center text-[10px] font-mono transition-all cursor-pointer ${
+                      isSelected
+                        ? 'bg-cyan-600 text-white border-2 border-cyan-400 ring-2 ring-cyan-500/40 shadow-md font-bold'
+                        : 'bg-white dark:bg-slate-900 border border-dashed border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-cyan-500 dark:hover:border-cyan-400 hover:bg-cyan-50 dark:hover:bg-cyan-950/40 hover:text-cyan-700 dark:hover:text-cyan-300'
+                    }`}
+                  >
+                    <span className="leading-none">#{slotNumber}</span>
+                    <span className={`text-[8px] leading-none mt-0.5 ${isSelected ? 'text-cyan-100' : 'text-slate-400 dark:text-slate-500'}`}>
+                      {isSelected ? 'Dipilih' : 'Kosong'}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-[10px] text-slate-500 dark:text-slate-400">
+              Klik kotak slot mana saja yang masih kosong (misal <span className="font-mono font-semibold text-cyan-600 dark:text-cyan-400">#1</span> pojok kiri atas, <span className="font-mono font-semibold text-cyan-600 dark:text-cyan-400">#8</span> pojok kanan atas, atau <span className="font-mono font-semibold text-cyan-600 dark:text-cyan-400">#16</span> pojok kanan bawah).
+            </p>
           </div>
 
           {/* Section 5: Staff & Notes */}

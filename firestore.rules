@@ -29,7 +29,7 @@ service cloud.firestore {
 
     function isValidCarton(data) {
       return data.keys().hasAll(['id', 'cartonBarcode', 'brand', 'phase', 'category', 'unitsCount', 'meterSerials', 'rackId', 'shelfLevel', 'dateInbound', 'receivedBy']) &&
-        data.keys().hasOnly(['id', 'cartonBarcode', 'brand', 'phase', 'category', 'unitsCount', 'meterSerials', 'rackId', 'shelfLevel', 'dateInbound', 'receivedBy', 'notes', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'cartonBarcode', 'brand', 'phase', 'category', 'unitsCount', 'meterSerials', 'rackId', 'shelfLevel', 'slotNumber', 'dateInbound', 'receivedBy', 'notes', 'updatedAt']) &&
         isValidId(data.id) &&
         data.cartonBarcode is string && data.cartonBarcode.size() >= 1 && data.cartonBarcode.size() <= 128 &&
         data.brand is string && data.brand.size() >= 1 && data.brand.size() <= 80 &&
@@ -39,6 +39,7 @@ service cloud.firestore {
         data.meterSerials is list && data.meterSerials.size() <= 100 &&
         data.rackId is string && data.rackId.size() >= 1 && data.rackId.size() <= 64 &&
         data.shelfLevel is number && data.shelfLevel >= 1 && data.shelfLevel <= 10 &&
+        (!('slotNumber' in data) || data.slotNumber == null || (data.slotNumber is number && data.slotNumber >= 1 && data.slotNumber <= 16)) &&
         data.dateInbound is string && data.dateInbound.size() >= 1 && data.dateInbound.size() <= 64 &&
         data.receivedBy is string && data.receivedBy.size() >= 1 && data.receivedBy.size() <= 120 &&
         (!('notes' in data) || data.notes == null || (data.notes is string && data.notes.size() <= 500)) &&

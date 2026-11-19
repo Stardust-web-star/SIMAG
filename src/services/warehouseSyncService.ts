@@ -198,6 +198,10 @@ function sanitizeCartonForCloud(carton: InboundCarton, updatedAt: string) {
     meterSerials: serials,
     rackId: toSafeDocId(carton.rackId || 'RAK-A').slice(0, 64),
     shelfLevel: clampNumber(carton.shelfLevel, 1, 10, 1),
+    slotNumber:
+      typeof carton.slotNumber === 'number' && Number.isFinite(carton.slotNumber)
+        ? Math.trunc(clampNumber(carton.slotNumber, 1, 16, 1))
+        : undefined,
     dateInbound: clampString(carton.dateInbound, 64, new Date().toISOString().slice(0, 16)),
     receivedBy: clampString(carton.receivedBy, 120, 'Petugas Gudang'),
     notes: typeof carton.notes === 'string' ? clampString(carton.notes, 500) : undefined,
@@ -678,6 +682,81 @@ export async function syncRackToCloud(updatedRack: WarehouseRack): Promise<void>
     ],
     `${RACKS_COL}/${sanitizedRack.id}`
   );
+}
+
+export async function syncDeleteMeterFromCloud(
+  serialNumber: string,
+  updatedCarton?: InboundCarton,
+  deletedEmptyCartonId?: string,
+  updatedRack?: WarehouseRack
+): Promise<void> {
+  const now = new Date().toISOString();
+  const safeSn = toSafeDocId(serialNumber);
+  const ops: Array<(batch: ReturnType<typeof writeBatch>) => void> = [
+    b => b.delete(doc(db, METERS_COL, safeSn)),
+  ];
+
+  if (deletedEmptyCartonId) {
+    ops.push(b => b.delete(doc(db, CARTONS_COL, toSafeDocId(deletedEmptyCartonId))));
+  } else if (updatedCarton) {
+    const sanitizedCarton = sanitizeCartonForCloud(updatedCarton, now);
+    ops.push(b => b.set(doc(db, CARTONS_COL, sanitizedCarton.id), sanitizedCarton));
+  }
+
+  if (updatedRack) {
+    const sanitizedRack = sanitizeRackForCloud(updatedRack, now);
+    ops.push(b => b.set(doc(db, RACKS_COL, sanitizedRack.id), sanitizedRack));
+  }
+
+  ops.push(b =>
+    b.set(
+      doc(db, META_COL, META_DOC_ID),
+      stripUndefined({
+        schemaVersion: 1,
+        hasRealData: true,
+        updatedAt: now,
+        lastSource: getClientSourceTag(),
+      })
+    )
+  );
+
+  await commitBatchChunks(ops, `${METERS_COL}/${safeSn}`);
+}
+
+export async function syncDeleteCartonFromCloud(
+  cartonId: string,
+  serialNumbers: string[],
+  updatedRack?: WarehouseRack
+): Promise<void> {
+  const now = new Date().toISOString();
+  const safeCartonId = toSafeDocId(cartonId);
+  const ops: Array<(batch: ReturnType<typeof writeBatch>) => void> = [
+    b => b.delete(doc(db, CARTONS_COL, safeCartonId)),
+  ];
+
+  serialNumbers.forEach(sn => {
+    const safeSn = toSafeDocId(sn);
+    ops.push(b => b.delete(doc(db, METERS_COL, safeSn)));
+  });
+
+  if (updatedRack) {
+    const sanitizedRack = sanitizeRackForCloud(updatedRack, now);
+    ops.push(b => b.set(doc(db, RACKS_COL, sanitizedRack.id), sanitizedRack));
+  }
+
+  ops.push(b =>
+    b.set(
+      doc(db, META_COL, META_DOC_ID),
+      stripUndefined({
+        schemaVersion: 1,
+        hasRealData: true,
+        updatedAt: now,
+        lastSource: getClientSourceTag(),
+      })
+    )
+  );
+
+  await commitBatchChunks(ops, `${CARTONS_COL}/${safeCartonId}`);
 }
 
 export async function syncSimagUserUpsertToCloud(user: SimagUser): Promise<void> {

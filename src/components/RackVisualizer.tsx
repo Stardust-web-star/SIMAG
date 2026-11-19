@@ -10,7 +10,8 @@ import {
   InboundCarton, 
   MeterUnit, 
   getBrandConfig,
-  MeterBrand 
+  MeterBrand,
+  resolveShelfSlots
 } from '../types/warehouse';
 import { 
   Layers, 
@@ -30,7 +31,8 @@ import {
   Palette,
   Plus,
   CheckCircle,
-  AlertCircle
+  AlertCircle,
+  Trash2
 } from 'lucide-react';
 
 export const BRAND_COLOR_PALETTE = [
@@ -54,12 +56,14 @@ interface RackVisualizerProps {
   meters: MeterUnit[];
   searchQuery: string;
   onSearchChange: (query: string) => void;
-  onMoveCarton: (cartonId: string, targetRackId: string, targetLevel: number) => void;
+  onMoveCarton: (cartonId: string, targetRackId: string, targetLevel: number, targetSlotNumber?: number) => void;
   onSelectCartonForOutbound?: (serialNumber: string) => void;
   onUpdateRack?: (updatedRack: WarehouseRack) => void;
   onOpenInboundForSlot?: (rackId: string, level: number, slotNumber: number) => void;
   onAddUnitsToCarton?: (cartonId: string, newUnits: MeterUnit[]) => void;
   onUpdateCartonBrand?: (cartonId: string, newBrand: MeterBrand) => void;
+  onDeleteMeter?: (serialNumber: string) => void;
+  onDeleteCarton?: (cartonId: string) => void;
 }
 
 export const RackVisualizer: React.FC<RackVisualizerProps> = ({
@@ -74,6 +78,8 @@ export const RackVisualizer: React.FC<RackVisualizerProps> = ({
   onOpenInboundForSlot,
   onAddUnitsToCarton,
   onUpdateCartonBrand,
+  onDeleteMeter,
+  onDeleteCarton,
 }) => {
   const [selectedShelf, setSelectedShelf] = useState<{ rackId: string; level: number } | null>({
     rackId: 'RAK-A',
@@ -83,6 +89,21 @@ export const RackVisualizer: React.FC<RackVisualizerProps> = ({
   const [moveModalCartonId, setMoveModalCartonId] = useState<string | null>(null);
   const [targetMoveRack, setTargetMoveRack] = useState<string>('RAK-A');
   const [targetMoveLevel, setTargetMoveLevel] = useState<number>(1);
+  const [targetMoveSlot, setTargetMoveSlot] = useState<number | null>(null);
+
+  const pickBestMoveSlot = (rackId: string, level: number, excludeCartonId?: string | null, preferredSlot?: number | null): number | null => {
+    const rack = racks.find(r => r.id === rackId);
+    const shelf = rack?.shelves.find(s => s.level === level);
+    const cap = shelf?.cartonCapacity || 16;
+    const shelfCartons = cartons.filter(c => c.rackId === rackId && c.shelfLevel === level && c.id !== excludeCartonId);
+    const resolved = resolveShelfSlots(shelfCartons, cap);
+    if (preferredSlot && preferredSlot >= 1 && preferredSlot <= cap) {
+      const candidate = resolved.find(s => s.slotNumber === preferredSlot);
+      if (candidate && !candidate.carton) return preferredSlot;
+    }
+    const firstEmpty = resolved.find(s => !s.carton);
+    return firstEmpty ? firstEmpty.slotNumber : null;
+  };
 
   // Inspect & top-up existing carton modal state
   const [inspectCartonId, setInspectCartonId] = useState<string | null>(null);
@@ -101,6 +122,10 @@ export const RackVisualizer: React.FC<RackVisualizerProps> = ({
   const [editBrand, setEditBrand] = useState<string>('Melcoinda');
   const [editBrandColor, setEditBrandColor] = useState<string>('#0284c7');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [confirmDeleteCartonId, setConfirmDeleteCartonId] = useState<string | null>(null);
+  const [confirmDeleteCardSn, setConfirmDeleteCardSn] = useState<{ cartonId: string; sn: string } | null>(null);
+  const [confirmDeleteInspectSn, setConfirmDeleteInspectSn] = useState<string | null>(null);
+  const [confirmDeleteInspectCarton, setConfirmDeleteInspectCarton] = useState<boolean>(false);
 
   // Close RackVisualizer modals cleanly on Escape
   useEffect(() => {
@@ -158,6 +183,8 @@ export const RackVisualizer: React.FC<RackVisualizerProps> = ({
     setAddStartSn('');
     setAddSerials([]);
     setAddError(null);
+    setConfirmDeleteInspectSn(null);
+    setConfirmDeleteInspectCarton(false);
   };
 
   const handleStartInlineEdit = (rack: WarehouseRack) => {
@@ -316,10 +343,15 @@ export const RackVisualizer: React.FC<RackVisualizerProps> = ({
     if (!selectedShelf) return null;
     const rack = racks.find(r => r.id === selectedShelf.rackId);
     const shelf = rack?.shelves.find(s => s.level === selectedShelf.level);
+    const shelfCartons = getShelfCartons(selectedShelf.rackId, selectedShelf.level);
+    const resolvedSlots = shelf
+      ? resolveShelfSlots(shelfCartons, shelf.cartonCapacity)
+      : [];
     return {
       rack,
       shelf,
-      cartons: getShelfCartons(selectedShelf.rackId, selectedShelf.level),
+      cartons: shelfCartons,
+      resolvedSlots,
       meters: getShelfMeters(selectedShelf.rackId, selectedShelf.level),
     };
   }, [selectedShelf, racks, cartonsByShelf, metersByCarton]);
@@ -536,6 +568,7 @@ export const RackVisualizer: React.FC<RackVisualizerProps> = ({
                     {/* Render from top to bottom: Level 1 (Atas) down to Level 4 (Bawah) */}
                     {[...rack.shelves].sort((a, b) => a.level - b.level).map((shelf) => {
                       const shelfCartons = getShelfCartons(rack.id, shelf.level);
+                      const resolvedSlots = resolveShelfSlots(shelfCartons, shelf.cartonCapacity);
                       const isSelected = selectedShelf?.rackId === rack.id && selectedShelf?.level === shelf.level;
                       const isSearchMatch = doesShelfMatchSearch(rack.id, shelf.level);
                       const occupancyPct = Math.round((shelfCartons.length / shelf.cartonCapacity) * 100);
@@ -566,8 +599,7 @@ export const RackVisualizer: React.FC<RackVisualizerProps> = ({
 
                           {/* Visual carton slots (16 dus per tingkat - setiap dus bisa diklik untuk diisi/dikelola) */}
                           <div className="grid grid-cols-4 sm:grid-cols-8 gap-1 sm:gap-1.5 my-1">
-                            {Array.from({ length: shelf.cartonCapacity }).map((_, slotIdx) => {
-                              const carton = shelfCartons[slotIdx];
+                            {resolvedSlots.map(({ slotNumber, carton }, slotIdx) => {
                               if (carton) {
                                 const cBrandCfg = getBrandConfig(carton.brand);
                                 const canTopUp = carton.unitsCount < 10;
@@ -720,29 +752,32 @@ export const RackVisualizer: React.FC<RackVisualizerProps> = ({
 
                   {activeShelfData.cartons.length > 0 &&
                     activeShelfData.cartons.length < activeShelfData.shelf.cartonCapacity &&
-                    activeShelfData.rack && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          onOpenInboundForSlot?.(
-                            activeShelfData.rack!.id,
-                            activeShelfData.shelf!.level,
-                            activeShelfData.cartons.length + 1
-                          )
-                        }
-                        className="btn-tactile w-full mb-3 py-2 px-3 rounded-xl border border-dashed border-cyan-500/60 dark:border-cyan-500/50 bg-cyan-50 dark:bg-cyan-950/30 hover:bg-cyan-100/80 dark:hover:bg-cyan-950/60 hover:border-cyan-600 dark:hover:border-cyan-400 text-cyan-800 dark:text-cyan-300 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        <span>Isi Slot Dus Kosong (#{activeShelfData.cartons.length + 1})</span>
-                      </button>
-                    )}
+                    activeShelfData.rack && (() => {
+                      const firstEmptySlot = activeShelfData.resolvedSlots.find(s => !s.carton)?.slotNumber || activeShelfData.cartons.length + 1;
+                      return (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            onOpenInboundForSlot?.(
+                              activeShelfData.rack!.id,
+                              activeShelfData.shelf!.level,
+                              firstEmptySlot
+                            )
+                          }
+                          className="btn-tactile w-full mb-3 py-2 px-3 rounded-xl border border-dashed border-cyan-500/60 dark:border-cyan-500/50 bg-cyan-50 dark:bg-cyan-950/30 hover:bg-cyan-100/80 dark:hover:bg-cyan-950/60 hover:border-cyan-600 dark:hover:border-cyan-400 text-cyan-800 dark:text-cyan-300 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>Isi Slot Dus Kosong (#{firstEmptySlot})</span>
+                        </button>
+                      );
+                    })()}
 
                   {activeShelfData.cartons.length === 0 ? (
                     <div className="py-7 text-center bg-slate-50 dark:bg-slate-950/50 rounded-xl border border-slate-200 dark:border-slate-800/80 px-4">
                       <Box className="w-8 h-8 text-slate-400 dark:text-slate-600 mx-auto mb-2" />
                       <p className="text-xs text-slate-600 dark:text-slate-400">Tingkat rak ini masih kosong.</p>
                       <p className="text-[11px] text-slate-500 mt-1 mb-3">
-                        Klik salah satu kotak "Kosong" pada rak atau tombol di bawah untuk langsung mengisi dus.
+                        Klik salah satu kotak "Kosong" pada rak atau tombol di bawah untuk langsung memilih &amp; mengisi dus.
                       </p>
                       {activeShelfData.rack && (
                         <button
@@ -763,7 +798,9 @@ export const RackVisualizer: React.FC<RackVisualizerProps> = ({
                     </div>
                   ) : (
                     <div className="space-y-3 max-h-[420px] overflow-y-auto overflow-x-hidden pr-1">
-                      {activeShelfData.cartons.map((carton, cIdx) => {
+                      {activeShelfData.resolvedSlots
+                        .filter((slot): slot is { slotNumber: number; carton: InboundCarton } => slot.carton !== null)
+                        .map(({ slotNumber, carton }) => {
                         const brandCfg = getBrandConfig(carton.brand);
                         const availableUnits = carton.meterSerials.filter(sn =>
                           meterBySerial.get(sn)?.status === 'AVAILABLE'
@@ -778,7 +815,7 @@ export const RackVisualizer: React.FC<RackVisualizerProps> = ({
                             <div className="flex items-center justify-between gap-2">
                               <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
                                 <span className="text-[10px] font-mono font-bold text-slate-600 dark:text-slate-400 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-1.5 py-0.5 rounded shrink-0">
-                                  Dus #{cIdx + 1}
+                                  Dus #{slotNumber}
                                 </span>
                                 <span className={`px-2 py-0.5 rounded text-[10px] font-bold border truncate max-w-[140px] ${brandCfg.badgeBg} ${brandCfg.badgeText}`}>
                                   {carton.brand}
@@ -788,7 +825,7 @@ export const RackVisualizer: React.FC<RackVisualizerProps> = ({
                               <div className="flex items-center gap-1.5 shrink-0">
                                 <button
                                   type="button"
-                                  onClick={() => handleOpenInspectCarton(carton, cIdx + 1)}
+                                  onClick={() => handleOpenInspectCarton(carton, slotNumber)}
                                   title={carton.unitsCount < 10 ? 'Tambah / Isi kWh Meter ke Dus' : 'Lihat detail isi dus'}
                                   className={`btn-tactile px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-colors flex items-center gap-1 cursor-pointer ${
                                     carton.unitsCount < 10
@@ -805,14 +842,61 @@ export const RackVisualizer: React.FC<RackVisualizerProps> = ({
                                     setMoveModalCartonId(carton.id);
                                     setTargetMoveRack(carton.rackId);
                                     setTargetMoveLevel(carton.shelfLevel);
+                                    setTargetMoveSlot(pickBestMoveSlot(carton.rackId, carton.shelfLevel, carton.id, slotNumber));
                                   }}
-                                  title="Pindah ke rak / tingkat lain"
+                                  title="Pindah ke rak / tingkat / posisi dus lain"
                                   className="btn-tactile p-1.5 rounded-lg bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 hover:text-cyan-700 dark:hover:text-cyan-400 border border-slate-300 dark:border-slate-700/80 text-xs transition-colors flex items-center justify-center cursor-pointer"
                                 >
                                   <ArrowRightLeft className="w-3.5 h-3.5" />
                                 </button>
+                                {onDeleteCarton && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setConfirmDeleteCardSn(null);
+                                      setConfirmDeleteCartonId(
+                                        confirmDeleteCartonId === carton.id ? null : carton.id
+                                      );
+                                    }}
+                                    title="Hapus dus beserta seluruh kWh meter di dalamnya"
+                                    className="btn-tactile p-1.5 rounded-lg bg-white dark:bg-slate-800 hover:bg-rose-50 dark:hover:bg-rose-950/60 text-slate-500 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 border border-slate-300 dark:border-slate-700/80 hover:border-rose-300 dark:hover:border-rose-500/40 text-xs transition-colors flex items-center justify-center cursor-pointer"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
                               </div>
                             </div>
+
+                            {/* Inline Delete Carton Confirmation */}
+                            {confirmDeleteCartonId === carton.id && (
+                              <div className="p-2.5 rounded-lg bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-500/40 space-y-2">
+                                <p className="text-[11px] text-rose-800 dark:text-rose-200 font-medium">
+                                  Hapus dus <strong className="font-mono">{carton.cartonBarcode}</strong> beserta <strong>{carton.unitsCount} unit</strong> kWh meter di dalamnya?
+                                </p>
+                                <div className="flex justify-end gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => setConfirmDeleteCartonId(null)}
+                                    className="px-2.5 py-1 rounded-md bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-[11px] font-semibold hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer"
+                                  >
+                                    Batal
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      onDeleteCarton?.(carton.id);
+                                      setConfirmDeleteCartonId(null);
+                                      setToastMessage(`Dus ${carton.cartonBarcode} dan isinya berhasil dihapus.`);
+                                      setTimeout(() => setToastMessage(null), 4000);
+                                    }}
+                                    className="px-2.5 py-1 rounded-md bg-rose-600 hover:bg-rose-500 text-white text-[11px] font-semibold flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                    Ya, Hapus Dus
+                                  </button>
+                                </div>
+                              </div>
+                            )}
 
                             {/* Barcode Row - full width so long barcodes never clip or push buttons */}
                             <div className="bg-white dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800/80 rounded-lg px-2.5 py-1.5">
@@ -858,32 +942,86 @@ export const RackVisualizer: React.FC<RackVisualizerProps> = ({
                                 <span className="text-slate-600 dark:text-slate-400 font-medium">
                                   Daftar Nomor Seri ({carton.meterSerials.length} SN):
                                 </span>
-                                <span className="text-slate-500">Klik SN untuk Outbound</span>
+                                <span className="text-slate-500">Klik SN / Ikon Hapus</span>
                               </div>
+
+                              {confirmDeleteCardSn?.cartonId === carton.id && (
+                                <div className="p-2 rounded-lg bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-500/40 flex flex-wrap items-center justify-between gap-2">
+                                  <span className="text-[10px] text-rose-800 dark:text-rose-200 font-medium">
+                                    Hapus SN <strong className="font-mono">{confirmDeleteCardSn.sn}</strong>?
+                                    {carton.meterSerials.length <= 1 ? ' (Dus ikut terhapus karena kosong)' : ''}
+                                  </span>
+                                  <div className="flex items-center gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => setConfirmDeleteCardSn(null)}
+                                      className="px-2 py-0.5 rounded bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-[10px] font-semibold cursor-pointer"
+                                    >
+                                      Batal
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const snToDelete = confirmDeleteCardSn.sn;
+                                        onDeleteMeter?.(snToDelete);
+                                        setConfirmDeleteCardSn(null);
+                                        setToastMessage(`kWh Meter SN ${snToDelete} berhasil dihapus.`);
+                                        setTimeout(() => setToastMessage(null), 4000);
+                                      }}
+                                      className="px-2 py-0.5 rounded bg-rose-600 hover:bg-rose-500 text-white text-[10px] font-semibold flex items-center gap-1 cursor-pointer"
+                                    >
+                                      <Trash2 className="w-2.5 h-2.5" />
+                                      Hapus
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+
                               <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto overflow-x-hidden pr-1">
                                 {carton.meterSerials.map((sn) => {
                                   const meter = meterBySerial.get(sn);
                                   const isDispatched = meter?.status === 'DISPATCHED';
 
                                   return (
-                                    <button
+                                    <div
                                       key={sn}
-                                      type="button"
-                                      disabled={isDispatched}
-                                      onClick={() => {
-                                        if (!isDispatched && onSelectCartonForOutbound) {
-                                          onSelectCartonForOutbound(sn);
-                                        }
-                                      }}
-                                      title={isDispatched ? 'Sudah dikeluarkan' : 'Klik untuk pilih SN ini di form pengeluaran'}
-                                      className={`btn-tactile text-[10px] font-mono px-2 py-1 rounded-md max-w-full break-all text-left transition-colors ${
+                                      className={`inline-flex items-center rounded-md border max-w-full overflow-hidden ${
                                         isDispatched
-                                          ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 line-through cursor-not-allowed'
-                                          : 'bg-white dark:bg-slate-900 text-cyan-700 dark:text-cyan-300 border border-slate-300 dark:border-slate-700/80 hover:bg-cyan-50 dark:hover:bg-cyan-950 hover:border-cyan-500 cursor-pointer'
+                                          ? 'bg-slate-200 dark:bg-slate-800 border-slate-300 dark:border-slate-700'
+                                          : 'bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700/80'
                                       }`}
                                     >
-                                      {sn}
-                                    </button>
+                                      <button
+                                        type="button"
+                                        disabled={isDispatched}
+                                        onClick={() => {
+                                          if (!isDispatched && onSelectCartonForOutbound) {
+                                            onSelectCartonForOutbound(sn);
+                                          }
+                                        }}
+                                        title={isDispatched ? 'Sudah dikeluarkan' : 'Klik untuk pilih SN ini di form pengeluaran'}
+                                        className={`text-[10px] font-mono px-2 py-1 break-all text-left transition-colors ${
+                                          isDispatched
+                                            ? 'text-slate-400 dark:text-slate-500 line-through cursor-not-allowed'
+                                            : 'text-cyan-700 dark:text-cyan-300 hover:bg-cyan-50 dark:hover:bg-cyan-950 cursor-pointer'
+                                        }`}
+                                      >
+                                        {sn}
+                                      </button>
+                                      {onDeleteMeter && (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setConfirmDeleteCartonId(null);
+                                            setConfirmDeleteCardSn({ cartonId: carton.id, sn });
+                                          }}
+                                          title={`Hapus kWh meter ${sn}`}
+                                          className="px-1.5 py-1 border-l border-slate-200 dark:border-slate-700/80 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/60 transition-colors cursor-pointer shrink-0"
+                                        >
+                                          <Trash2 className="w-3 h-3" />
+                                        </button>
+                                      )}
+                                    </div>
                                   );
                                 })}
                               </div>
@@ -944,7 +1082,11 @@ export const RackVisualizer: React.FC<RackVisualizerProps> = ({
                 <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Pilih Rak Tujuan:</label>
                 <select
                   value={targetMoveRack}
-                  onChange={(e) => setTargetMoveRack(e.target.value)}
+                  onChange={(e) => {
+                    const nextRack = e.target.value;
+                    setTargetMoveRack(nextRack);
+                    setTargetMoveSlot(prev => pickBestMoveSlot(nextRack, targetMoveLevel, moveModalCartonId, prev));
+                  }}
                   className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-slate-200 focus:outline-none focus:border-cyan-500"
                 >
                   {racks.map(r => {
@@ -964,7 +1106,11 @@ export const RackVisualizer: React.FC<RackVisualizerProps> = ({
                 <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Pilih Tingkat (Level):</label>
                 <select
                   value={targetMoveLevel}
-                  onChange={(e) => setTargetMoveLevel(Number(e.target.value))}
+                  onChange={(e) => {
+                    const nextLvl = Number(e.target.value);
+                    setTargetMoveLevel(nextLvl);
+                    setTargetMoveSlot(prev => pickBestMoveSlot(targetMoveRack, nextLvl, moveModalCartonId, prev));
+                  }}
                   className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-slate-200 focus:outline-none focus:border-cyan-500"
                 >
                   <option value={1}>Tingkat 1 (Atas)</option>
@@ -972,6 +1118,48 @@ export const RackVisualizer: React.FC<RackVisualizerProps> = ({
                   <option value={3}>Tingkat 3</option>
                   <option value={4}>Tingkat 4 (Bawah)</option>
                 </select>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-medium text-slate-700 dark:text-slate-300">Pilih Posisi Slot Dus:</label>
+                  <span className="text-[10px] font-mono text-cyan-600 dark:text-cyan-400">
+                    {targetMoveSlot ? `Slot #${targetMoveSlot}` : 'Penuh'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-8 gap-1">
+                  {resolveShelfSlots(
+                    cartons.filter(c => c.rackId === targetMoveRack && c.shelfLevel === targetMoveLevel && c.id !== moveModalCartonId),
+                    16
+                  ).map(({ slotNumber, carton }) => {
+                    const isSelected = targetMoveSlot === slotNumber && !carton;
+                    if (carton) {
+                      return (
+                        <div
+                          key={slotNumber}
+                          title={`Slot #${slotNumber} terisi`}
+                          className="h-7 rounded border border-slate-300 dark:border-slate-700 bg-slate-200 dark:bg-slate-800 text-slate-400 flex items-center justify-center text-[9px] font-mono cursor-not-allowed opacity-60"
+                        >
+                          #{slotNumber}
+                        </div>
+                      );
+                    }
+                    return (
+                      <button
+                        key={slotNumber}
+                        type="button"
+                        onClick={() => setTargetMoveSlot(slotNumber)}
+                        className={`h-7 rounded text-[9px] font-mono transition-colors cursor-pointer ${
+                          isSelected
+                            ? 'bg-cyan-600 text-white border border-cyan-400 font-bold'
+                            : 'bg-slate-50 dark:bg-slate-950 border border-dashed border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-cyan-500'
+                        }`}
+                      >
+                        #{slotNumber}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
 
@@ -983,11 +1171,12 @@ export const RackVisualizer: React.FC<RackVisualizerProps> = ({
                 Batal
               </button>
               <button
+                disabled={!targetMoveSlot}
                 onClick={() => {
-                  onMoveCarton(moveModalCartonId, targetMoveRack, targetMoveLevel);
+                  onMoveCarton(moveModalCartonId, targetMoveRack, targetMoveLevel, targetMoveSlot ?? undefined);
                   setMoveModalCartonId(null);
                 }}
-                className="btn-tactile px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer"
+                className="btn-tactile px-4 py-2 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white rounded-xl text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer"
               >
                 <Check className="w-4 h-4" />
                 Simpan Perpindahan
@@ -1548,32 +1737,90 @@ export const RackVisualizer: React.FC<RackVisualizerProps> = ({
                     <h4 className="text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
                       Daftar SN di Dalam Dus ({inspectedCarton.meterSerials.length})
                     </h4>
-                    <span className="text-[10px] text-slate-500">Klik SN tersedia untuk Outbound</span>
+                    <span className="text-[10px] text-slate-500">Klik SN untuk Outbound / Ikon 🗑 untuk Hapus</span>
                   </div>
+
+                  {confirmDeleteInspectSn && (
+                    <div className="p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-500/40 flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-xs text-rose-800 dark:text-rose-200 font-medium">
+                        Hapus kWh meter SN <strong className="font-mono">{confirmDeleteInspectSn}</strong>?
+                        {inspectedCarton.meterSerials.length <= 1 ? ' (Dus akan ikut dihapus karena kosong)' : ''}
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setConfirmDeleteInspectSn(null)}
+                          className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-xs font-semibold cursor-pointer"
+                        >
+                          Batal
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const snToDelete = confirmDeleteInspectSn;
+                            const isLastUnit = inspectedCarton.meterSerials.length <= 1;
+                            onDeleteMeter?.(snToDelete);
+                            setConfirmDeleteInspectSn(null);
+                            if (isLastUnit) {
+                              setInspectCartonId(null);
+                            }
+                            setToastMessage(`kWh Meter SN ${snToDelete} berhasil dihapus.`);
+                            setTimeout(() => setToastMessage(null), 4000);
+                          }}
+                          className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold flex items-center gap-1 cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          Ya, Hapus SN
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto p-3 bg-slate-50 dark:bg-slate-950/70 rounded-xl border border-slate-200 dark:border-slate-800">
                     {inspectedCarton.meterSerials.map((sn, idx) => {
                       const meter = meterBySerial.get(sn);
                       const isDispatched = meter?.status === 'DISPATCHED';
                       return (
-                        <button
+                        <div
                           key={sn}
-                          type="button"
-                          disabled={isDispatched}
-                          onClick={() => {
-                            if (!isDispatched && onSelectCartonForOutbound) {
-                              setInspectCartonId(null);
-                              onSelectCartonForOutbound(sn);
-                            }
-                          }}
-                          title={isDispatched ? 'Sudah dikeluarkan' : 'Klik untuk keluarkan SN ini (Outbound)'}
-                          className={`btn-tactile text-[11px] font-mono px-2.5 py-1 rounded-lg transition-colors ${
+                          className={`inline-flex items-center rounded-lg border overflow-hidden ${
                             isDispatched
-                              ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 line-through cursor-not-allowed'
-                              : 'bg-white dark:bg-slate-900 text-cyan-700 dark:text-cyan-300 border border-slate-300 dark:border-slate-700 hover:bg-cyan-50 dark:hover:bg-cyan-950 hover:border-cyan-500 cursor-pointer'
+                              ? 'bg-slate-200 dark:bg-slate-800 border-slate-300 dark:border-slate-700'
+                              : 'bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700'
                           }`}
                         >
-                          #{idx + 1} {sn}
-                        </button>
+                          <button
+                            type="button"
+                            disabled={isDispatched}
+                            onClick={() => {
+                              if (!isDispatched && onSelectCartonForOutbound) {
+                                setInspectCartonId(null);
+                                onSelectCartonForOutbound(sn);
+                              }
+                            }}
+                            title={isDispatched ? 'Sudah dikeluarkan' : 'Klik untuk keluarkan SN ini (Outbound)'}
+                            className={`text-[11px] font-mono px-2.5 py-1 transition-colors ${
+                              isDispatched
+                                ? 'text-slate-400 dark:text-slate-500 line-through cursor-not-allowed'
+                                : 'text-cyan-700 dark:text-cyan-300 hover:bg-cyan-50 dark:hover:bg-cyan-950 cursor-pointer'
+                            }`}
+                          >
+                            #{idx + 1} {sn}
+                          </button>
+                          {onDeleteMeter && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setConfirmDeleteInspectCarton(false);
+                                setConfirmDeleteInspectSn(sn);
+                              }}
+                              title={`Hapus kWh meter ${sn}`}
+                              className="px-2 py-1 border-l border-slate-200 dark:border-slate-700 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/60 transition-colors cursor-pointer"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
                       );
                     })}
                   </div>
@@ -1581,27 +1828,84 @@ export const RackVisualizer: React.FC<RackVisualizerProps> = ({
               </div>
 
               {/* Footer */}
-              <div className="px-5 py-3.5 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 flex items-center justify-between gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMoveModalCartonId(inspectedCarton.id);
-                    setTargetMoveRack(inspectedCarton.rackId);
-                    setTargetMoveLevel(inspectedCarton.shelfLevel);
-                    setInspectCartonId(null);
-                  }}
-                  className="btn-tactile px-3.5 py-2 bg-white hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
-                >
-                  <ArrowRightLeft className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
-                  Pindah Rak / Tingkat
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setInspectCartonId(null)}
-                  className="btn-tactile px-4 py-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-xl text-xs font-semibold cursor-pointer"
-                >
-                  Tutup
-                </button>
+              <div className="px-5 py-3.5 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 space-y-2.5">
+                {confirmDeleteInspectCarton && (
+                  <div className="p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-500/40 flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-xs text-rose-800 dark:text-rose-200 font-medium">
+                      Hapus seluruh dus <strong className="font-mono">{inspectedCarton.cartonBarcode}</strong> ({inspectedCarton.unitsCount} unit kWh meter)?
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDeleteInspectCarton(false)}
+                        className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-xs font-semibold cursor-pointer"
+                      >
+                        Batal
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const targetBarcode = inspectedCarton.cartonBarcode;
+                          onDeleteCarton?.(inspectedCarton.id);
+                          setConfirmDeleteInspectCarton(false);
+                          setInspectCartonId(null);
+                          setToastMessage(`Dus ${targetBarcode} beserta seluruh unitnya berhasil dihapus.`);
+                          setTimeout(() => setToastMessage(null), 4000);
+                        }}
+                        className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold flex items-center gap-1 cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Ya, Hapus Dus
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMoveModalCartonId(inspectedCarton.id);
+                        setTargetMoveRack(inspectedCarton.rackId);
+                        setTargetMoveLevel(inspectedCarton.shelfLevel);
+                        setTargetMoveSlot(
+                          pickBestMoveSlot(
+                            inspectedCarton.rackId,
+                            inspectedCarton.shelfLevel,
+                            inspectedCarton.id,
+                            inspectSlotNumber ?? inspectedCarton.slotNumber
+                          )
+                        );
+                        setInspectCartonId(null);
+                      }}
+                      className="btn-tactile px-3.5 py-2 bg-white hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <ArrowRightLeft className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
+                      Pindah Rak / Tingkat
+                    </button>
+                    {onDeleteCarton && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setConfirmDeleteInspectSn(null);
+                          setConfirmDeleteInspectCarton(prev => !prev);
+                        }}
+                        className="btn-tactile px-3.5 py-2 bg-rose-50 hover:bg-rose-100 dark:bg-rose-500/15 dark:hover:bg-rose-500/25 text-rose-600 dark:text-rose-300 border border-rose-200 dark:border-rose-500/30 rounded-xl text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Hapus Dus
+                      </button>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setInspectCartonId(null)}
+                    className="btn-tactile px-4 py-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-xl text-xs font-semibold cursor-pointer"
+                  >
+                    Tutup
+                  </button>
+                </div>
               </div>
             </motion.div>
           </motion.div>

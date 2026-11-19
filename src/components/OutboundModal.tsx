@@ -25,7 +25,8 @@ import {
   Zap,
   Tag,
   Clock,
-  Radio
+  Radio,
+  Trash2
 } from 'lucide-react';
 import { soundEffects, vibratePhone } from '../services/notificationService';
 import { hardwareScannerService } from '../services/hardwareScannerService';
@@ -36,6 +37,7 @@ interface OutboundModalProps {
   availableMeters: MeterUnit[];
   preselectedSn?: string;
   onSaveOutbound: (record: OutboundRecord) => void;
+  onDeleteMeter?: (serialNumber: string) => void;
   onOpenScanner: (callback: (scannedText: string) => void) => void;
 }
 
@@ -65,6 +67,7 @@ export const OutboundModal: React.FC<OutboundModalProps> = ({
   availableMeters,
   preselectedSn,
   onSaveOutbound,
+  onDeleteMeter,
   onOpenScanner,
 }) => {
   const [jenisTransaksi, setJenisTransaksi] = useState<OutboundType>('PB');
@@ -89,6 +92,8 @@ export const OutboundModal: React.FC<OutboundModalProps> = ({
   const [snSegelLama, setSnSegelLama] = useState<string>('');
 
   const [selectedMeterUnit, setSelectedMeterUnit] = useState<MeterUnit | null>(null);
+  const [confirmDeleteSn, setConfirmDeleteSn] = useState<string | null>(null);
+  const [deleteSuccessMsg, setDeleteSuccessMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Initialize date & preselected SN
@@ -112,6 +117,10 @@ export const OutboundModal: React.FC<OutboundModalProps> = ({
 
       // Default MCB based on daya
       updateMcbForDaya(1300);
+
+      setConfirmDeleteSn(null);
+      setDeleteSuccessMsg(null);
+      setErrorMsg(null);
 
       if (preselectedSn) {
         handleSelectSerialNumber(preselectedSn);
@@ -139,6 +148,8 @@ export const OutboundModal: React.FC<OutboundModalProps> = ({
     setSnKwhMeter(sn);
     setNoMeter(sn);
     setSelectedMeterUnit(unit || null);
+    setConfirmDeleteSn(null);
+    setDeleteSuccessMsg(null);
   };
 
   // Listen for Kassen KS-606 hardware scanner trigger
@@ -373,24 +384,90 @@ export const OutboundModal: React.FC<OutboundModalProps> = ({
             </div>
 
             {selectedMeterUnit && (
-              <div className="p-2.5 bg-white dark:bg-slate-900/90 rounded-lg border border-slate-200 dark:border-slate-700/70 flex flex-wrap items-center justify-between gap-2 text-xs">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-slate-500 dark:text-slate-400">Merek:</span>
-                  <span className="font-semibold text-slate-900 dark:text-white">{selectedMeterUnit.brand}</span>
-                  <span className="text-slate-400 dark:text-slate-500">•</span>
-                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border flex items-center gap-1 ${
-                    (selectedMeterUnit.category?.toLowerCase().includes('paska') || selectedMeterUnit.category?.toLowerCase().includes('pasca'))
-                      ? 'bg-purple-50 dark:bg-purple-500/15 border-purple-200 dark:border-purple-500/30 text-purple-700 dark:text-purple-300'
-                      : 'bg-amber-50 dark:bg-amber-500/15 border-amber-200 dark:border-amber-500/30 text-amber-700 dark:text-amber-300'
-                  }`}>
-                    {(selectedMeterUnit.category?.toLowerCase().includes('paska') || selectedMeterUnit.category?.toLowerCase().includes('pasca'))
-                      ? '🔌 kWh Meter Paskabayar'
-                      : '⚡ kWh Meter Prabayar'}
-                  </span>
+              <div className="p-2.5 bg-white dark:bg-slate-900/90 rounded-lg border border-slate-200 dark:border-slate-700/70 space-y-2 text-xs">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-slate-500 dark:text-slate-400">Merek:</span>
+                    <span className="font-semibold text-slate-900 dark:text-white">{selectedMeterUnit.brand}</span>
+                    <span className="text-slate-400 dark:text-slate-500">•</span>
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border flex items-center gap-1 ${
+                      (selectedMeterUnit.category?.toLowerCase().includes('paska') || selectedMeterUnit.category?.toLowerCase().includes('pasca'))
+                        ? 'bg-purple-50 dark:bg-purple-500/15 border-purple-200 dark:border-purple-500/30 text-purple-700 dark:text-purple-300'
+                        : 'bg-amber-50 dark:bg-amber-500/15 border-amber-200 dark:border-amber-500/30 text-amber-700 dark:text-amber-300'
+                    }`}>
+                      {(selectedMeterUnit.category?.toLowerCase().includes('paska') || selectedMeterUnit.category?.toLowerCase().includes('pasca'))
+                        ? '🔌 kWh Meter Paskabayar'
+                        : '⚡ kWh Meter Prabayar'}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="text-cyan-600 dark:text-cyan-400 font-mono text-[11px]">
+                      Lokasi: {selectedMeterUnit.rackId} / Tingkat {selectedMeterUnit.shelfLevel}
+                    </div>
+                    {onDeleteMeter && (
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDeleteSn(
+                          confirmDeleteSn === selectedMeterUnit.serialNumber ? null : selectedMeterUnit.serialNumber
+                        )}
+                        title="Hapus kWh meter ini dari stok gudang"
+                        className="btn-tactile px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 dark:bg-rose-500/15 dark:hover:bg-rose-500/25 text-rose-600 dark:text-rose-300 border border-rose-200 dark:border-rose-500/30 text-[11px] font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        <span>Hapus</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <div className="text-cyan-600 dark:text-cyan-400 font-mono text-[11px]">
-                  Lokasi: {selectedMeterUnit.rackId} / Tingkat {selectedMeterUnit.shelfLevel}
+
+                {confirmDeleteSn === selectedMeterUnit.serialNumber && (
+                  <div className="p-2.5 rounded-lg bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-500/40 flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-[11px] text-rose-800 dark:text-rose-200 font-medium">
+                      Hapus permanen SN <strong className="font-mono">{selectedMeterUnit.serialNumber}</strong> dari stok gudang?
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDeleteSn(null)}
+                        className="px-2.5 py-1 rounded-md bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-[11px] font-semibold hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer"
+                      >
+                        Batal
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const targetSn = selectedMeterUnit.serialNumber;
+                          onDeleteMeter?.(targetSn);
+                          setConfirmDeleteSn(null);
+                          setSelectedMeterUnit(null);
+                          setSnKwhMeter('');
+                          setNoMeter('');
+                          setDeleteSuccessMsg(`kWh Meter SN ${targetSn} berhasil dihapus dari stok.`);
+                        }}
+                        className="px-2.5 py-1 rounded-md bg-rose-600 hover:bg-rose-500 text-white text-[11px] font-semibold flex items-center gap-1 cursor-pointer"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        Ya, Hapus
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {deleteSuccessMsg && (
+              <div className="p-2.5 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 rounded-lg text-xs text-emerald-700 dark:text-emerald-300 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5">
+                  <CheckCircle className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                  <span>{deleteSuccessMsg}</span>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setDeleteSuccessMsg(null)}
+                  className="text-emerald-600 dark:text-emerald-400 hover:text-emerald-800 dark:hover:text-emerald-200 text-[11px] font-semibold cursor-pointer"
+                >
+                  Tutup
+                </button>
               </div>
             )}
           </div>

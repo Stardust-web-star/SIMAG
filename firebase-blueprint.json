@@ -29,6 +29,7 @@
         "meterSerials": { "type": "array" },
         "rackId": { "type": "string", "minLength": 1, "maxLength": 64 },
         "shelfLevel": { "type": "number" },
+        "slotNumber": { "type": "number" },
         "dateInbound": { "type": "string", "minLength": 1, "maxLength": 64 },
         "receivedBy": { "type": "string", "minLength": 1, "maxLength": 120 },
         "notes": { "type": "string", "maxLength": 500 },

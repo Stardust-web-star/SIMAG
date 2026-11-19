@@ -69,6 +69,8 @@ import {
   syncOutboundToCloud,
   syncMoveCartonToCloud,
   syncRackToCloud,
+  syncDeleteMeterFromCloud,
+  syncDeleteCartonFromCloud,
   seedWarehouseSnapshotToCloud,
 } from './services/warehouseSyncService';
 import { hardwareScannerService } from './services/hardwareScannerService';
@@ -970,16 +972,16 @@ export default function App() {
     setBastRecordToPrint(record);
   };
 
-  // Move Carton between shelves
-  const handleMoveCarton = (cartonId: string, targetRackId: string, targetLevel: number) => {
+  // Move Carton between shelves or slots
+  const handleMoveCarton = (cartonId: string, targetRackId: string, targetLevel: number, targetSlotNumber?: number) => {
     const snap = latestSnapshotRef.current;
     const carton = snap.cartons.find(c => c.id === cartonId);
     if (!carton) return;
 
-    // Check target rack capacity
+    // Check target rack capacity (excluding the carton itself when moving within same shelf)
     const targetRack = snap.racks.find(r => r.id === targetRackId);
     const targetShelf = targetRack?.shelves.find(s => s.level === targetLevel);
-    const existingInTarget = snap.cartons.filter(c => c.rackId === targetRackId && c.shelfLevel === targetLevel);
+    const existingInTarget = snap.cartons.filter(c => c.rackId === targetRackId && c.shelfLevel === targetLevel && c.id !== cartonId);
 
     if (targetShelf && existingInTarget.length >= targetShelf.cartonCapacity) {
       showSyncToast({
@@ -992,7 +994,12 @@ export default function App() {
 
     const nextCartons = snap.cartons.map(c => {
       if (c.id === cartonId) {
-        return { ...c, rackId: targetRackId, shelfLevel: targetLevel };
+        return {
+          ...c,
+          rackId: targetRackId,
+          shelfLevel: targetLevel,
+          ...(targetSlotNumber ? { slotNumber: targetSlotNumber } : {}),
+        };
       }
       return c;
     });
@@ -1064,6 +1071,156 @@ export default function App() {
 
     if (autoSyncEnabled) {
       void runWarehouseSync(`Ubah Identitas Rak (${updatedRack.id})`);
+    }
+  };
+
+  // Delete a single kWh meter SN from stock, carton, and cloud
+  const handleDeleteMeter = (serialNumber: string) => {
+    const cleanSn = serialNumber.trim();
+    if (!cleanSn) return;
+
+    const snap = latestSnapshotRef.current;
+    const targetMeter = snap.meters.find(m => m.serialNumber === cleanSn);
+    const parentCarton = snap.cartons.find(
+      c => c.meterSerials.includes(cleanSn) || (targetMeter && c.cartonBarcode === targetMeter.cartonBarcode)
+    );
+
+    const remainingSerials = parentCarton
+      ? parentCarton.meterSerials.filter(sn => sn !== cleanSn)
+      : [];
+    const shouldRemoveEmptyCarton = Boolean(parentCarton && remainingSerials.length === 0);
+
+    const nextMeters = snap.meters.filter(m => m.serialNumber !== cleanSn);
+
+    let nextCartons = snap.cartons;
+    let nextRacks = snap.racks;
+    let updatedCarton: InboundCarton | undefined;
+    let updatedRack: WarehouseRack | undefined;
+
+    if (parentCarton) {
+      if (shouldRemoveEmptyCarton) {
+        nextCartons = snap.cartons.filter(c => c.id !== parentCarton.id);
+        nextRacks = snap.racks.map(r => {
+          if (r.id !== parentCarton.rackId) return r;
+          return {
+            ...r,
+            shelves: r.shelves.map(s => ({
+              ...s,
+              cartonIds: s.cartonIds.filter(id => id !== parentCarton.id),
+            })),
+          };
+        });
+        updatedRack = nextRacks.find(r => r.id === parentCarton.rackId);
+      } else {
+        nextCartons = snap.cartons.map(c =>
+          c.id === parentCarton.id
+            ? {
+                ...c,
+                meterSerials: remainingSerials,
+                unitsCount: remainingSerials.length,
+              }
+            : c
+        );
+        updatedCarton = nextCartons.find(c => c.id === parentCarton.id);
+      }
+    }
+
+    latestSnapshotRef.current = {
+      ...snap,
+      racks: nextRacks,
+      cartons: nextCartons,
+      meters: nextMeters,
+    };
+
+    setMeters(nextMeters);
+    setCartons(nextCartons);
+    setRacks(nextRacks);
+
+    if (outboundPreselectedSn === cleanSn) {
+      setOutboundPreselectedSn(undefined);
+    }
+
+    void syncDeleteMeterFromCloud(
+      cleanSn,
+      updatedCarton,
+      shouldRemoveEmptyCarton ? parentCarton?.id : undefined,
+      updatedRack
+    ).catch(err => {
+      console.error('Gagal sinkron hapus kWh meter ke cloud:', err);
+    });
+
+    soundEffects.playSuccess();
+    vibratePhone();
+    sendBrowserPushNotification(
+      'kWh Meter Dihapus',
+      shouldRemoveEmptyCarton && parentCarton
+        ? `SN ${cleanSn} dihapus. Dus ${parentCarton.cartonBarcode} kosong sehingga ikut dihapus dari ${parentCarton.rackId}.`
+        : `kWh Meter SN ${cleanSn} berhasil dihapus dari stok gudang.`
+    );
+
+    if (autoSyncEnabled) {
+      void runWarehouseSync(`Hapus kWh Meter (${cleanSn})`);
+    }
+  };
+
+  // Delete an entire carton and all its kWh meter units
+  const handleDeleteCarton = (cartonId: string) => {
+    const snap = latestSnapshotRef.current;
+    const targetCarton = snap.cartons.find(c => c.id === cartonId);
+    if (!targetCarton) return;
+
+    const serialSet = new Set<string>(targetCarton.meterSerials);
+    snap.meters.forEach(m => {
+      if (m.cartonBarcode === targetCarton.cartonBarcode) {
+        serialSet.add(m.serialNumber);
+      }
+    });
+    const affectedSerials = Array.from(serialSet);
+
+    const nextMeters = snap.meters.filter(
+      m => m.cartonBarcode !== targetCarton.cartonBarcode && !serialSet.has(m.serialNumber)
+    );
+    const nextCartons = snap.cartons.filter(c => c.id !== cartonId);
+    const nextRacks = snap.racks.map(r => {
+      if (r.id !== targetCarton.rackId) return r;
+      return {
+        ...r,
+        shelves: r.shelves.map(s => ({
+          ...s,
+          cartonIds: s.cartonIds.filter(id => id !== cartonId),
+        })),
+      };
+    });
+    const updatedRack = nextRacks.find(r => r.id === targetCarton.rackId);
+
+    latestSnapshotRef.current = {
+      ...snap,
+      racks: nextRacks,
+      cartons: nextCartons,
+      meters: nextMeters,
+    };
+
+    setMeters(nextMeters);
+    setCartons(nextCartons);
+    setRacks(nextRacks);
+
+    if (outboundPreselectedSn && serialSet.has(outboundPreselectedSn)) {
+      setOutboundPreselectedSn(undefined);
+    }
+
+    void syncDeleteCartonFromCloud(cartonId, affectedSerials, updatedRack).catch(err => {
+      console.error('Gagal sinkron hapus dus ke cloud:', err);
+    });
+
+    soundEffects.playSuccess();
+    vibratePhone();
+    sendBrowserPushNotification(
+      'Dus Karton Dihapus',
+      `Dus ${targetCarton.cartonBarcode} (${affectedSerials.length} unit kWh meter) berhasil dihapus dari ${targetCarton.rackId} Tk ${targetCarton.shelfLevel}.`
+    );
+
+    if (autoSyncEnabled) {
+      void runWarehouseSync(`Hapus Dus (${targetCarton.cartonBarcode})`);
     }
   };
 
@@ -1214,6 +1371,8 @@ export default function App() {
                         }}
                         onAddUnitsToCarton={handleAddUnitsToCarton}
                         onUpdateCartonBrand={handleUpdateCartonBrand}
+                        onDeleteMeter={handleDeleteMeter}
+                        onDeleteCarton={handleDeleteCarton}
                       />
                     )}
 
@@ -1336,6 +1495,7 @@ export default function App() {
         availableMeters={meters.filter(m => m.status === 'AVAILABLE')}
         preselectedSn={outboundPreselectedSn}
         onSaveOutbound={handleSaveOutbound}
+        onDeleteMeter={handleDeleteMeter}
         onOpenScanner={(cb) => handleOpenScanner(cb, 'meter')}
       />
 

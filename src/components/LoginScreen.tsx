@@ -175,24 +175,47 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
               initial={{ opacity: 0, x: -12 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.32, delay: 0.08, ease: EASE_OUT_EXPO }}
-              className="inline-flex items-center gap-2.5 px-3.5 py-2 rounded-2xl bg-[#042127]/85 border border-emerald-400/25 shadow-lg"
+              className="inline-flex items-center gap-3 px-4 py-2 rounded-full bg-[#042329]/90 border border-teal-400/35 shadow-lg"
             >
-              <div className="w-8 h-8 rounded-lg bg-[#fff200] p-1 flex items-center justify-center shrink-0 shadow-xs">
-                {!logoError ? (
-                  <img
-                    src="/assets/aistudio/Logo_PLN_67ac91e8.png"
-                    alt="Logo PT PLN (Persero)"
-                    referrerPolicy="no-referrer"
-                    onError={() => setLogoError(true)}
-                    className="w-full h-full object-contain"
+              <div className="w-9 h-9 rounded-[11px] bg-[#fbe317] flex items-center justify-center shrink-0 shadow-xs">
+                <svg
+                  viewBox="0 0 32 32"
+                  className="w-7 h-7"
+                  aria-label="Logo PT PLN (Persero)"
+                  role="img"
+                >
+                  <path
+                    d="M6.5 11.5 Q8.8 9.7 11.2 11.5 T16 11.5 T20.8 11.5 T25.5 11.5"
+                    fill="none"
+                    stroke="#0ea5e9"
+                    strokeWidth="2.1"
+                    strokeLinecap="round"
                   />
-                ) : (
-                  <span className="font-extrabold text-[11px] text-sky-800">PLN</span>
-                )}
+                  <path
+                    d="M6.5 16 Q8.8 14.2 11.2 16 T16 16 T20.8 16 T25.5 16"
+                    fill="none"
+                    stroke="#0ea5e9"
+                    strokeWidth="2.1"
+                    strokeLinecap="round"
+                  />
+                  <path
+                    d="M6.5 20.5 Q8.8 18.7 11.2 20.5 T16 20.5 T20.8 20.5 T25.5 20.5"
+                    fill="none"
+                    stroke="#0ea5e9"
+                    strokeWidth="2.1"
+                    strokeLinecap="round"
+                  />
+                  <path
+                    d="M16.2 4.5 L10.8 17.5 L15.7 17.5 L14.8 27.8 L21.4 13.8 L16.3 13.8 Z"
+                    fill="#ef231c"
+                  />
+                </svg>
               </div>
-              <div className="leading-tight">
-                <div className="text-sm font-extrabold tracking-wide text-cyan-300">PLN</div>
-                <div className="text-[10px] font-bold tracking-wider text-slate-200 uppercase">
+              <div className="leading-none pr-1">
+                <div className="text-[16px] font-black tracking-wide text-[#00e5ff] leading-none">
+                  PLN
+                </div>
+                <div className="mt-1 text-[11px] font-extrabold tracking-[0.06em] text-[#a7f3d0] uppercase leading-none">
                   ULP BAGUALA
                 </div>
               </div>
