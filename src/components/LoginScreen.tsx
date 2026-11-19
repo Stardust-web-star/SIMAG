@@ -159,7 +159,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
         className="relative z-10 w-full max-w-[920px] rounded-3xl overflow-hidden border border-slate-300/80 dark:border-slate-700/60 shadow-[0_24px_70px_rgba(15,23,42,0.18)] dark:shadow-[0_28px_80px_rgba(2,6,23,0.85)] grid grid-cols-1 md:grid-cols-12"
       >
         {/* Left Brand Panel */}
-        <div className="md:col-span-5 relative bg-gradient-to-br from-[#084c4e] via-[#06343c] to-[#051d26] text-white p-7 sm:p-9 flex flex-col justify-between md:border-r border-emerald-400/20">
+        <div className="md:col-span-5 relative bg-gradient-to-br from-[#084c4e] via-[#06343c] to-[#051d26] text-white px-7 py-7 sm:px-9 sm:py-9 flex flex-col justify-between md:border-r border-emerald-400/20">
           {/* Subtle Dot Matrix Overlay */}
           <div
             className="pointer-events-none absolute inset-0 opacity-45"
@@ -243,7 +243,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.35, delay: 0.22 }}
-            className="relative z-10 mt-8 pt-4 border-t border-emerald-400/20 flex items-center justify-between text-[11px] font-mono text-emerald-100/80"
+            className="relative z-10 mt-8 pt-4 border-t border-emerald-400/25 flex items-center justify-between gap-2 min-h-[36px] text-[11px] font-mono leading-none text-emerald-100/80"
           >
             <span>PLN ULP Baguala</span>
             <span>2026 Edition</span>
@@ -255,7 +255,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
           initial={{ opacity: 0, x: 12 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.36, delay: 0.1, ease: EASE_OUT_EXPO }}
-          className="md:col-span-7 bg-white dark:bg-[#0b1526] p-6 sm:p-10 flex flex-col justify-between transition-colors duration-200"
+          className="md:col-span-7 bg-white dark:bg-[#0b1526] px-6 py-7 sm:px-10 sm:py-9 flex flex-col justify-between transition-colors duration-200"
         >
           <div>
             {/* Form Header */}
@@ -451,12 +451,12 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
           </div>
 
           {/* Right Panel Footer */}
-          <div className="mt-6 pt-4 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500 dark:text-slate-400">
+          <div className="mt-8 pt-4 border-t border-slate-200 dark:border-slate-700/70 flex items-center justify-between gap-2 min-h-[36px] text-[11px] leading-none text-slate-500 dark:text-slate-400">
             <span className="inline-flex items-center gap-1.5 font-medium">
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
               <span>Enkripsi Terproteksi</span>
             </span>
-            <span className="font-mono tabular-nums">PLN ULP Baguala • 2026</span>
+            <span className="font-mono tabular-nums whitespace-nowrap">PLN ULP Baguala • 2026</span>
           </div>
         </motion.div>
       </motion.div>
