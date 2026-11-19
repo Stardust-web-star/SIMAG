@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useMemo, useEffect } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { 
   WarehouseRack, 
   InboundCarton, 
@@ -392,13 +393,17 @@ export const RackVisualizer: React.FC<RackVisualizerProps> = ({
         {/* Racks Layout (Visual Warehouse Elevation) */}
         <div className="lg:col-span-8 space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {filteredRacks.map((rack) => {
+            {filteredRacks.map((rack, rackIdx) => {
               const brandCfg = getBrandConfig(rack.primaryBrand);
               const rackColor = rack.brandColor || brandCfg.color;
 
               return (
-                <div 
-                  key={rack.id} 
+                <motion.div 
+                  key={rack.id}
+                  layout="position"
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.25, delay: Math.min(rackIdx * 0.04, 0.2), ease: [0.16, 1, 0.3, 1] }}
                   className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm dark:shadow-lg flex flex-col justify-between relative overflow-hidden card-hover-lift"
                   style={{
                     borderTop: `3px solid ${rackColor}`,
@@ -644,11 +649,11 @@ export const RackVisualizer: React.FC<RackVisualizerProps> = ({
                   {/* Quick Rack Summary */}
                   <div className="mt-3 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 px-1">
                     <span>Total Muatan:</span>
-                    <span className="font-mono text-cyan-700 dark:text-cyan-400 font-semibold">
+                    <span className="font-mono tabular-nums text-cyan-700 dark:text-cyan-400 font-semibold">
                       {rackUnitTotals.get(rack.id) || 0} Pcs Unit
                     </span>
                   </div>
-                </div>
+                </motion.div>
               );
             })}
           </div>
@@ -657,8 +662,16 @@ export const RackVisualizer: React.FC<RackVisualizerProps> = ({
         {/* Selected Shelf Inspector (Right Sidebar) */}
         <div className="lg:col-span-4 space-y-4">
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5 shadow-sm dark:shadow-xl sticky top-4">
-            {activeShelfData?.shelf ? (
-              <div key={`${selectedShelf?.rackId}-${selectedShelf?.level}`} className="space-y-4 animate-fade-in">
+            <AnimatePresence mode="wait">
+              {activeShelfData?.shelf ? (
+                <motion.div
+                  key={`${selectedShelf?.rackId}-${selectedShelf?.level}`}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -6 }}
+                  transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+                  className="space-y-4"
+                >
                 {/* Inspector Header */}
                 <div className="border-b border-slate-200 dark:border-slate-800 pb-3 flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
@@ -881,24 +894,43 @@ export const RackVisualizer: React.FC<RackVisualizerProps> = ({
                     </div>
                   )}
                 </div>
-              </div>
+              </motion.div>
             ) : (
-              <div className="py-12 text-center text-slate-500">
+              <motion.div
+                key="empty-shelf-inspector"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.16 }}
+                className="py-12 text-center text-slate-500"
+              >
                 <Layers className="w-10 h-10 mx-auto mb-2 opacity-50" />
                 <p className="text-xs">Pilih salah satu tingkat rak untuk melihat detail muatan.</p>
-              </div>
+              </motion.div>
             )}
+            </AnimatePresence>
           </div>
         </div>
       </div>
 
       {/* Move Carton Modal */}
-      {moveModalCartonId && (
-        <div
-          onClick={(e) => { if (e.target === e.currentTarget) setMoveModalCartonId(null); }}
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 dark:bg-slate-950/80 animate-fade-in"
-        >
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 w-full max-w-md rounded-2xl p-5 shadow-2xl animate-scale-in">
+      <AnimatePresence>
+        {moveModalCartonId && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18 }}
+            onClick={(e) => { if (e.target === e.currentTarget) setMoveModalCartonId(null); }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-[2px]"
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 14, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 10, scale: 0.96 }}
+              transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+              className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 w-full max-w-md rounded-2xl p-5 shadow-2xl"
+            >
             <h3 className="text-base font-bold text-slate-900 dark:text-white mb-1 flex items-center gap-2">
               <ArrowRightLeft className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />
               Pindah Lokasi Fisik Karton
@@ -956,17 +988,29 @@ export const RackVisualizer: React.FC<RackVisualizerProps> = ({
                 Simpan Perpindahan
               </button>
             </div>
-          </div>
-        </div>
-      )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Edit Rack Modal (Full Detail Dialog) */}
-      {editModalRack && (
-        <div
-          onClick={(e) => { if (e.target === e.currentTarget) setEditModalRack(null); }}
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 dark:bg-slate-950/80 animate-fade-in"
-        >
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 w-full max-w-lg rounded-2xl p-5 sm:p-6 shadow-2xl animate-scale-in">
+      <AnimatePresence>
+        {editModalRack && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18 }}
+            onClick={(e) => { if (e.target === e.currentTarget) setEditModalRack(null); }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-[2px]"
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 14, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 10, scale: 0.96 }}
+              transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+              className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 w-full max-w-lg rounded-2xl p-5 sm:p-6 shadow-2xl"
+            >
             <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3 mb-4">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-xl bg-cyan-50 dark:bg-cyan-500/10 border border-cyan-200 dark:border-cyan-500/30 flex items-center justify-center text-cyan-600 dark:text-cyan-400">
@@ -1188,12 +1232,14 @@ export const RackVisualizer: React.FC<RackVisualizerProps> = ({
                 Simpan Perubahan
               </button>
             </div>
-          </div>
-        </div>
-      )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Inspect / Fill Existing Carton Modal */}
-      {inspectedCarton && (() => {
+      <AnimatePresence>
+        {inspectedCarton && (() => {
         const remainingSlots = Math.max(0, 10 - inspectedCarton.unitsCount);
         const brandCfg = getBrandConfig(inspectedCarton.brand);
         const lastSn = inspectedCarton.meterSerials[inspectedCarton.meterSerials.length - 1];
@@ -1250,11 +1296,22 @@ export const RackVisualizer: React.FC<RackVisualizerProps> = ({
         };
 
         return (
-          <div
+          <motion.div
+            key={inspectedCarton.id}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18 }}
             onClick={(e) => { if (e.target === e.currentTarget) setInspectCartonId(null); }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 dark:bg-slate-950/80 animate-fade-in"
+            className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-[2px]"
           >
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 w-full max-w-xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-scale-in">
+            <motion.div
+              initial={{ opacity: 0, y: 14, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 10, scale: 0.96 }}
+              transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+              className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 w-full max-w-xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+            >
               {/* Header */}
               <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-white dark:bg-slate-900">
                 <div className="flex items-center gap-3 min-w-0">
@@ -1541,18 +1598,27 @@ export const RackVisualizer: React.FC<RackVisualizerProps> = ({
                   Tutup
                 </button>
               </div>
-            </div>
-          </div>
+            </motion.div>
+          </motion.div>
         );
       })()}
+      </AnimatePresence>
 
       {/* Floating Save Toast */}
-      {toastMessage && (
-        <div className="fixed bottom-16 right-4 z-50 bg-emerald-600 text-white px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-2.5 text-xs font-semibold animate-toast-in">
-          <Check className="w-4 h-4 text-emerald-200" />
-          <span>{toastMessage}</span>
-        </div>
-      )}
+      <AnimatePresence>
+        {toastMessage && (
+          <motion.div
+            initial={{ opacity: 0, y: 12, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 8, scale: 0.96 }}
+            transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+            className="fixed bottom-16 right-4 z-50 bg-emerald-600 text-white px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-2.5 text-xs font-semibold"
+          >
+            <Check className="w-4 h-4 text-emerald-200" />
+            <span>{toastMessage}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

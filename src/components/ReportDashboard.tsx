@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useMemo } from 'react';
+import { motion } from 'motion/react';
 import * as XLSX from 'xlsx';
 import { 
   OutboundRecord, 
@@ -164,49 +165,69 @@ export const ReportDashboard: React.FC<ReportDashboardProps> = ({
     <div className="w-full min-w-0 space-y-4">
       {/* Top Stat Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 card-hover-lift shadow-sm dark:shadow-none">
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.24, delay: 0, ease: [0.16, 1, 0.3, 1] }}
+          className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 card-hover-lift shadow-sm dark:shadow-none"
+        >
           <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 block uppercase">
             Pasang Baru (PB)
           </span>
           <div className="flex items-baseline gap-2 mt-1">
-            <span className="text-2xl font-bold font-mono text-cyan-600 dark:text-cyan-400">{countPb}</span>
+            <span className="text-2xl font-bold font-mono tabular-nums text-cyan-600 dark:text-cyan-400">{countPb}</span>
             <span className="text-xs text-slate-500">transaksi</span>
           </div>
           <span className="text-[11px] text-slate-500 mt-1 block">Pemasangan pelanggan baru</span>
-        </div>
+        </motion.div>
 
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 card-hover-lift shadow-sm dark:shadow-none">
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.24, delay: 0.04, ease: [0.16, 1, 0.3, 1] }}
+          className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 card-hover-lift shadow-sm dark:shadow-none"
+        >
           <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 block uppercase">
             Ganti Meter Gangguan
           </span>
           <div className="flex items-baseline gap-2 mt-1">
-            <span className="text-2xl font-bold font-mono text-rose-600 dark:text-rose-400">{countGmGangguan}</span>
+            <span className="text-2xl font-bold font-mono tabular-nums text-rose-600 dark:text-rose-400">{countGmGangguan}</span>
             <span className="text-xs text-slate-500">transaksi</span>
           </div>
           <span className="text-[11px] text-slate-500 mt-1 block">Error periksa / rusak</span>
-        </div>
+        </motion.div>
 
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 card-hover-lift shadow-sm dark:shadow-none">
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.24, delay: 0.08, ease: [0.16, 1, 0.3, 1] }}
+          className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 card-hover-lift shadow-sm dark:shadow-none"
+        >
           <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 block uppercase">
             Ganti Meter Tua
           </span>
           <div className="flex items-baseline gap-2 mt-1">
-            <span className="text-2xl font-bold font-mono text-amber-600 dark:text-amber-400">{countGmTua}</span>
+            <span className="text-2xl font-bold font-mono tabular-nums text-amber-600 dark:text-amber-400">{countGmTua}</span>
             <span className="text-xs text-slate-500">transaksi</span>
           </div>
           <span className="text-[11px] text-slate-500 mt-1 block">Peremajaan & re-tera</span>
-        </div>
+        </motion.div>
 
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 card-hover-lift shadow-sm dark:shadow-none">
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.24, delay: 0.12, ease: [0.16, 1, 0.3, 1] }}
+          className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 card-hover-lift shadow-sm dark:shadow-none"
+        >
           <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 block uppercase">
             Kabel Twist Terpakai
           </span>
           <div className="flex items-baseline gap-2 mt-1">
-            <span className="text-2xl font-bold font-mono text-emerald-600 dark:text-emerald-400">{totalKabelTw}</span>
+            <span className="text-2xl font-bold font-mono tabular-nums text-emerald-600 dark:text-emerald-400">{totalKabelTw}</span>
             <span className="text-xs text-slate-500">meter</span>
           </div>
           <span className="text-[11px] text-slate-500 mt-1 block">Panjang TIC/TW terdistribusi</span>
-        </div>
+        </motion.div>
       </div>
 
       {/* Filter and Action Header */}

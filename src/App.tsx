@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { motion, AnimatePresence, MotionConfig } from 'motion/react';
 import { User } from 'firebase/auth';
 import { 
   WarehouseRack, 
@@ -71,7 +72,33 @@ import {
   seedWarehouseSnapshotToCloud,
 } from './services/warehouseSyncService';
 import { hardwareScannerService } from './services/hardwareScannerService';
-import { Zap, X, Camera, Plus, Send, FileSpreadsheet, RefreshCw, CheckCircle2, AlertCircle, ExternalLink, Clock } from 'lucide-react';
+import { Zap, X, Camera, Plus, Send, FileSpreadsheet, RefreshCw, CheckCircle2, AlertCircle, ExternalLink, Clock, LogOut } from 'lucide-react';
+
+type SimagTab = 'racks' | 'stock' | 'reports' | 'users';
+const SIMAG_TAB_ORDER: SimagTab[] = ['racks', 'stock', 'reports', 'users'];
+
+const tabPanelVariants = {
+  enter: (direction: number) => ({
+    opacity: 0,
+    x: direction * 24,
+  }),
+  center: {
+    opacity: 1,
+    x: 0,
+    transition: {
+      duration: 0.24,
+      ease: [0.16, 1, 0.3, 1] as const,
+    },
+  },
+  exit: (direction: number) => ({
+    opacity: 0,
+    x: direction * -18,
+    transition: {
+      duration: 0.16,
+      ease: [0.4, 0, 1, 1] as const,
+    },
+  }),
+};
 
 export default function App() {
   // Theme (Light Mode & Dark Mode)
@@ -100,14 +127,27 @@ export default function App() {
       : null
   );
   const [idleWarningSeconds, setIdleWarningSeconds] = useState<number | null>(null);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const logoutTimerRef = useRef<number | null>(null);
   const lastActivityAtRef = useRef<number>(
     initialSessionInfo.current.session?.lastActivityAt || Date.now()
   );
   const lastTouchPersistRef = useRef<number>(0);
 
   // Navigation
-  const [activeTab, setActiveTab] = useState<'racks' | 'stock' | 'reports' | 'users'>('racks');
+  const [activeTab, setActiveTab] = useState<SimagTab>('racks');
+  const [tabDirection, setTabDirection] = useState<1 | -1>(1);
   const [rackSearchQuery, setRackSearchQuery] = useState('');
+
+  const handleTabChange = useCallback((nextTab: SimagTab) => {
+    setActiveTab((prevTab) => {
+      if (prevTab === nextTab) return prevTab;
+      const prevIdx = SIMAG_TAB_ORDER.indexOf(prevTab);
+      const nextIdx = SIMAG_TAB_ORDER.indexOf(nextTab);
+      setTabDirection(nextIdx >= prevIdx ? 1 : -1);
+      return nextTab;
+    });
+  }, []);
 
   // Warehouse Data with LocalStorage Persistence & Version Check for Real Data
   const STORAGE_VERSION = 'pln_warehouse_real_v2';
@@ -392,9 +432,16 @@ export default function App() {
     }
   }, [showSyncToast]);
 
+  useEffect(() => {
+    return () => {
+      if (logoutTimerRef.current !== null) {
+        window.clearTimeout(logoutTimerRef.current);
+      }
+    };
+  }, []);
+
   const handleSimagLogout = useCallback((expiredMessage?: string) => {
     logoutSimagSession();
-    setSimagSession(null);
     setIdleWarningSeconds(null);
     setIsScannerOpen(false);
     setIsInboundOpen(false);
@@ -405,7 +452,18 @@ export default function App() {
     setBastRecordToPrint(null);
     setIsKassenModalOpen(false);
     setKassenToast(null);
-    setLoginNotice(expiredMessage ?? null);
+    setIsLoggingOut(true);
+
+    if (logoutTimerRef.current !== null) {
+      window.clearTimeout(logoutTimerRef.current);
+    }
+
+    logoutTimerRef.current = window.setTimeout(() => {
+      logoutTimerRef.current = null;
+      setSimagSession(null);
+      setIsLoggingOut(false);
+      setLoginNotice(expiredMessage ?? null);
+    }, 260);
   }, []);
 
   const recordSimagActivity = useCallback(() => {
@@ -512,7 +570,7 @@ export default function App() {
       } else {
         // Meter Serial Number: locate in visual racks & show quick dispatch option
         setRackSearchQuery(code);
-        setActiveTab('racks');
+        handleTabChange('racks');
         setKassenToast({ code, type: 'meter' });
         setTimeout(() => setKassenToast(null), 9000);
       }
@@ -1042,125 +1100,158 @@ export default function App() {
     }
   };
 
-  if (!simagSession) {
-    return (
-      <LoginScreen
-        onLoginSuccess={(session, updatedUsers) => {
-          lastActivityAtRef.current = session.lastActivityAt;
-          lastTouchPersistRef.current = Date.now();
-          setSimagUsers(updatedUsers);
-          setSimagSession(session);
-          setLoginNotice(null);
-          setIdleWarningSeconds(null);
-          setActiveTab('racks');
-        }}
-        inactivityNotice={loginNotice}
-        onDismissNotice={() => setLoginNotice(null)}
-        theme={theme}
-        onToggleTheme={() => setTheme(prev => (prev === 'dark' ? 'light' : 'dark'))}
-      />
-    );
-  }
-
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-900 dark:bg-slate-950 dark:text-slate-100 flex flex-col font-sans transition-colors duration-200">
-      {/* Top Header */}
-      <Header
-        activeTab={activeTab}
-        onTabChange={setActiveTab}
-        onOpenScanner={() => handleOpenScanner()}
-        onOpenKassenModal={() => setIsKassenModalOpen(true)}
-        onOpenInbound={() => {
-          setInboundTarget(null);
-          setIsInboundOpen(true);
-        }}
-        onOpenOutbound={() => {
-          setOutboundPreselectedSn(undefined);
-          setIsOutboundOpen(true);
-        }}
-        onOpenGoogleSheets={() => setIsSheetsModalOpen(true)}
-        onOpenNotifications={() => setIsNotificationsOpen(true)}
-        unreadAlertCount={alerts.length}
-        currentUser={currentUser}
-        hasSheetsToken={hasSheetsToken}
-        cloudSyncStatus={cloudSyncStatus}
-        autoSyncEnabled={autoSyncEnabled}
-        autoSyncStatus={autoSyncState.status}
-        onResetData={handleResetData}
-        theme={theme}
-        onToggleTheme={() => setTheme(prev => (prev === 'dark' ? 'light' : 'dark'))}
-        simagSession={simagSession}
-        onLogoutSimag={() => handleSimagLogout()}
-      />
-
-      {/* Main Body Content */}
-      <main className="flex-1 max-w-7xl w-full min-w-0 mx-auto px-3 sm:px-6 py-5 pb-24 sm:pb-6 space-y-6">
-        {/* Real-time KPI Stats Overview */}
-        <StatCards
-          racks={racks}
-          cartons={cartons}
-          meters={meters}
-          outbounds={outbounds}
-          onOpenNotifications={() => setIsNotificationsOpen(true)}
-        />
-
-        {/* Tab View Switching with Smooth Animation */}
-        <div key={activeTab} className="w-full min-w-0 animate-slide-up">
-          {activeTab === 'racks' && (
-            <RackVisualizer
-              racks={racks}
-              cartons={cartons}
-              meters={meters}
-              searchQuery={rackSearchQuery}
-              onSearchChange={setRackSearchQuery}
-              onMoveCarton={handleMoveCarton}
-              onSelectCartonForOutbound={(sn) => {
-                setOutboundPreselectedSn(sn);
-                setIsOutboundOpen(true);
-              }}
-              onUpdateRack={handleUpdateRack}
-              onOpenInboundForSlot={(rackId, level, slotNumber) => {
-                setInboundTarget({ rackId, level, slotNumber });
-                setIsInboundOpen(true);
-              }}
-              onAddUnitsToCarton={handleAddUnitsToCarton}
-              onUpdateCartonBrand={handleUpdateCartonBrand}
-            />
-          )}
-
-          {activeTab === 'stock' && (
-            <StockListTab
-              meters={meters}
-              cartons={cartons}
-              onSelectForOutbound={(sn) => {
-                setOutboundPreselectedSn(sn);
-                setIsOutboundOpen(true);
-              }}
-              onLocateInRack={(sn) => {
-                setRackSearchQuery(sn);
+    <MotionConfig reducedMotion="user">
+      <AnimatePresence mode="wait">
+        {!simagSession ? (
+          <motion.div
+            key="simag-login-view"
+            initial={{ opacity: 0, scale: 0.985 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 1.015, y: -8 }}
+            transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+            className="min-h-screen"
+          >
+            <LoginScreen
+              onLoginSuccess={(session, updatedUsers) => {
+                if (logoutTimerRef.current !== null) {
+                  window.clearTimeout(logoutTimerRef.current);
+                  logoutTimerRef.current = null;
+                }
+                lastActivityAtRef.current = session.lastActivityAt;
+                lastTouchPersistRef.current = Date.now();
+                setIsLoggingOut(false);
+                setSimagUsers(updatedUsers);
+                setSimagSession(session);
+                setLoginNotice(null);
+                setIdleWarningSeconds(null);
+                setTabDirection(1);
                 setActiveTab('racks');
               }}
+              inactivityNotice={loginNotice}
+              onDismissNotice={() => setLoginNotice(null)}
+              theme={theme}
+              onToggleTheme={() => setTheme(prev => (prev === 'dark' ? 'light' : 'dark'))}
             />
-          )}
+          </motion.div>
+        ) : (
+          <motion.div
+            key="simag-dashboard-view"
+            initial={{ opacity: 0, y: 12, scale: 0.99 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 10, scale: 0.985 }}
+            transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+            className="min-h-screen bg-slate-100 text-slate-900 dark:bg-slate-950 dark:text-slate-100 flex flex-col font-sans transition-colors duration-200 relative"
+          >
+            {/* Top Header */}
+            <Header
+              activeTab={activeTab}
+              onTabChange={handleTabChange}
+              onOpenScanner={() => handleOpenScanner()}
+              onOpenKassenModal={() => setIsKassenModalOpen(true)}
+              onOpenInbound={() => {
+                setInboundTarget(null);
+                setIsInboundOpen(true);
+              }}
+              onOpenOutbound={() => {
+                setOutboundPreselectedSn(undefined);
+                setIsOutboundOpen(true);
+              }}
+              onOpenGoogleSheets={() => setIsSheetsModalOpen(true)}
+              onOpenNotifications={() => setIsNotificationsOpen(true)}
+              unreadAlertCount={alerts.length}
+              currentUser={currentUser}
+              hasSheetsToken={hasSheetsToken}
+              cloudSyncStatus={cloudSyncStatus}
+              autoSyncEnabled={autoSyncEnabled}
+              autoSyncStatus={autoSyncState.status}
+              onResetData={handleResetData}
+              theme={theme}
+              onToggleTheme={() => setTheme(prev => (prev === 'dark' ? 'light' : 'dark'))}
+              simagSession={simagSession}
+              onLogoutSimag={() => handleSimagLogout()}
+            />
 
-          {activeTab === 'reports' && (
-            <ReportDashboard
-              outbounds={outbounds}
-              cartons={cartons}
-              meters={meters}
-              onOpenPrintBast={(rec) => setBastRecordToPrint(rec)}
-            />
-          )}
+            {/* Main Body Content */}
+            <main className="flex-1 max-w-7xl w-full min-w-0 mx-auto px-3 sm:px-6 py-5 pb-24 sm:pb-6 space-y-6">
+              {/* Real-time KPI Stats Overview */}
+              <StatCards
+                racks={racks}
+                cartons={cartons}
+                meters={meters}
+                outbounds={outbounds}
+                onOpenNotifications={() => setIsNotificationsOpen(true)}
+              />
 
-          {activeTab === 'users' && (
-            <UserManagementTab
-              currentSession={simagSession}
-              users={simagUsers}
-              onUsersChange={setSimagUsers}
-            />
-          )}
-        </div>
-      </main>
+              {/* Tab View Switching with Smooth Directional Animation */}
+              <div className="w-full min-w-0 overflow-x-clip">
+                <AnimatePresence mode="wait" custom={tabDirection} initial={false}>
+                  <motion.div
+                    key={activeTab}
+                    custom={tabDirection}
+                    variants={tabPanelVariants}
+                    initial="enter"
+                    animate="center"
+                    exit="exit"
+                    className="w-full min-w-0"
+                  >
+                    {activeTab === 'racks' && (
+                      <RackVisualizer
+                        racks={racks}
+                        cartons={cartons}
+                        meters={meters}
+                        searchQuery={rackSearchQuery}
+                        onSearchChange={setRackSearchQuery}
+                        onMoveCarton={handleMoveCarton}
+                        onSelectCartonForOutbound={(sn) => {
+                          setOutboundPreselectedSn(sn);
+                          setIsOutboundOpen(true);
+                        }}
+                        onUpdateRack={handleUpdateRack}
+                        onOpenInboundForSlot={(rackId, level, slotNumber) => {
+                          setInboundTarget({ rackId, level, slotNumber });
+                          setIsInboundOpen(true);
+                        }}
+                        onAddUnitsToCarton={handleAddUnitsToCarton}
+                        onUpdateCartonBrand={handleUpdateCartonBrand}
+                      />
+                    )}
+
+                    {activeTab === 'stock' && (
+                      <StockListTab
+                        meters={meters}
+                        cartons={cartons}
+                        onSelectForOutbound={(sn) => {
+                          setOutboundPreselectedSn(sn);
+                          setIsOutboundOpen(true);
+                        }}
+                        onLocateInRack={(sn) => {
+                          setRackSearchQuery(sn);
+                          handleTabChange('racks');
+                        }}
+                      />
+                    )}
+
+                    {activeTab === 'reports' && (
+                      <ReportDashboard
+                        outbounds={outbounds}
+                        cartons={cartons}
+                        meters={meters}
+                        onOpenPrintBast={(rec) => setBastRecordToPrint(rec)}
+                      />
+                    )}
+
+                    {activeTab === 'users' && (
+                      <UserManagementTab
+                        currentSession={simagSession}
+                        users={simagUsers}
+                        onUsersChange={setSimagUsers}
+                      />
+                    )}
+                  </motion.div>
+                </AnimatePresence>
+              </div>
+            </main>
 
       {/* Bottom Sticky Mobile Quick Action Bar */}
       <div className="sm:hidden fixed bottom-0 left-0 right-0 z-30 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 px-3 py-2 flex items-center justify-around shadow-[0_-8px_24px_rgba(15,23,42,0.08)] dark:shadow-[0_-8px_24px_rgba(2,6,23,0.6)]">
@@ -1290,175 +1381,233 @@ export default function App() {
       />
 
       {/* Floating Kassen KS-606 Quick Detection Toast */}
-      {kassenToast && (
-        <div className="fixed top-20 right-4 z-50 bg-white dark:bg-slate-900 border-2 border-cyan-500 text-slate-900 dark:text-white p-4 rounded-2xl shadow-2xl animate-slide-down flex items-start gap-3 max-w-sm">
-          <div className="w-10 h-10 rounded-xl bg-cyan-50 dark:bg-cyan-500/20 text-cyan-600 dark:text-cyan-400 flex items-center justify-center shrink-0 border border-cyan-200 dark:border-cyan-500/30">
-            <Zap className="w-5 h-5 fill-current" />
-          </div>
-          <div className="flex-1">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold text-cyan-700 dark:text-cyan-400 font-mono flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 dark:bg-emerald-400 animate-pulse" />
-                Scan Kassen KS-606:
-              </span>
-              <button
-                onClick={() => setKassenToast(null)}
-                className="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
+      <AnimatePresence>
+        {kassenToast && (
+          <motion.div
+            key="kassen-toast"
+            initial={{ opacity: 0, y: -14, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -10, scale: 0.96 }}
+            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+            className="fixed top-20 right-4 z-50 bg-white dark:bg-slate-900 border-2 border-cyan-500 text-slate-900 dark:text-white p-4 rounded-2xl shadow-2xl flex items-start gap-3 max-w-sm"
+          >
+            <div className="w-10 h-10 rounded-xl bg-cyan-50 dark:bg-cyan-500/20 text-cyan-600 dark:text-cyan-400 flex items-center justify-center shrink-0 border border-cyan-200 dark:border-cyan-500/30">
+              <Zap className="w-5 h-5 fill-current" />
             </div>
-            <p className="font-mono text-sm font-bold text-slate-900 dark:text-white mt-1 break-all">
-              {kassenToast.code}
-            </p>
-            <div className="mt-2.5 flex items-center gap-2">
-              <button
-                onClick={() => {
-                  setOutboundPreselectedSn(kassenToast.code);
-                  setIsOutboundOpen(true);
-                  setKassenToast(null);
-                }}
-                className="btn-tactile px-2.5 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-xs font-semibold shadow-sm cursor-pointer"
-              >
-                Keluarkan Material
-              </button>
-              <button
-                onClick={() => {
-                  setActiveTab('racks');
-                  setRackSearchQuery(kassenToast.code);
-                  setKassenToast(null);
-                }}
-                className="btn-tactile px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-cyan-700 dark:text-cyan-300 rounded-lg text-xs font-semibold border border-slate-300 dark:border-slate-700 cursor-pointer"
-              >
-                Lacak di Rak
-              </button>
+            <div className="flex-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-cyan-700 dark:text-cyan-400 font-mono flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 dark:bg-emerald-400 animate-pulse" />
+                  Scan Kassen KS-606:
+                </span>
+                <button
+                  onClick={() => setKassenToast(null)}
+                  className="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              <p className="font-mono text-sm font-bold text-slate-900 dark:text-white mt-1 break-all">
+                {kassenToast.code}
+              </p>
+              <div className="mt-2.5 flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    setOutboundPreselectedSn(kassenToast.code);
+                    setIsOutboundOpen(true);
+                    setKassenToast(null);
+                  }}
+                  className="btn-tactile px-2.5 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-xs font-semibold shadow-sm cursor-pointer"
+                >
+                  Keluarkan Material
+                </button>
+                <button
+                  onClick={() => {
+                    handleTabChange('racks');
+                    setRackSearchQuery(kassenToast.code);
+                    setKassenToast(null);
+                  }}
+                  className="btn-tactile px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-cyan-700 dark:text-cyan-300 rounded-lg text-xs font-semibold border border-slate-300 dark:border-slate-700 cursor-pointer"
+                >
+                  Lacak di Rak
+                </button>
+              </div>
             </div>
-          </div>
-        </div>
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Floating Google Sheets Auto-Sync Toast */}
-      {syncToast && (
-        <div
-          className={`fixed bottom-20 sm:bottom-5 left-3 right-3 sm:right-auto sm:left-5 z-50 sm:max-w-sm bg-white dark:bg-slate-900 border-2 rounded-2xl shadow-2xl p-3.5 flex items-start gap-3 animate-slide-up ${
-            syncToast.type === 'synced'
-              ? 'border-emerald-500/80'
-              : syncToast.type === 'syncing'
-              ? 'border-cyan-500/80'
-              : syncToast.type === 'needs-reauth'
-              ? 'border-amber-500/80'
-              : 'border-rose-500/80'
-          }`}
-        >
-          <div
-            className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border ${
+      <AnimatePresence>
+        {syncToast && (
+          <motion.div
+            key="sync-toast"
+            initial={{ opacity: 0, y: 16, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 12, scale: 0.96 }}
+            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+            className={`fixed bottom-20 sm:bottom-5 left-3 right-3 sm:right-auto sm:left-5 z-50 sm:max-w-sm bg-white dark:bg-slate-900 border-2 rounded-2xl shadow-2xl p-3.5 flex items-start gap-3 ${
               syncToast.type === 'synced'
-                ? 'bg-emerald-50 dark:bg-emerald-500/15 border-emerald-200 dark:border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
+                ? 'border-emerald-500/80'
                 : syncToast.type === 'syncing'
-                ? 'bg-cyan-50 dark:bg-cyan-500/15 border-cyan-200 dark:border-cyan-500/30 text-cyan-600 dark:text-cyan-400'
+                ? 'border-cyan-500/80'
                 : syncToast.type === 'needs-reauth'
-                ? 'bg-amber-50 dark:bg-amber-500/15 border-amber-200 dark:border-amber-500/30 text-amber-600 dark:text-amber-400'
-                : 'bg-rose-50 dark:bg-rose-500/15 border-rose-200 dark:border-rose-500/30 text-rose-600 dark:text-rose-400'
+                ? 'border-amber-500/80'
+                : 'border-rose-500/80'
             }`}
           >
-            {syncToast.type === 'syncing' ? (
-              <RefreshCw className="w-4 h-4 animate-spin" />
-            ) : syncToast.type === 'synced' ? (
-              <CheckCircle2 className="w-4 h-4" />
-            ) : (
-              <AlertCircle className="w-4 h-4" />
-            )}
-          </div>
-
-          <div className="flex-1 min-w-0">
-            <div className="flex items-start justify-between gap-2">
-              <p className="text-xs font-bold text-slate-900 dark:text-white leading-snug">
-                {syncToast.title}
-              </p>
-              <button
-                type="button"
-                onClick={() => setSyncToast(null)}
-                className="text-slate-400 hover:text-slate-700 dark:hover:text-white p-0.5 rounded cursor-pointer"
-                aria-label="Tutup notifikasi sinkronisasi"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
+            <div
+              className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border ${
+                syncToast.type === 'synced'
+                  ? 'bg-emerald-50 dark:bg-emerald-500/15 border-emerald-200 dark:border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
+                  : syncToast.type === 'syncing'
+                  ? 'bg-cyan-50 dark:bg-cyan-500/15 border-cyan-200 dark:border-cyan-500/30 text-cyan-600 dark:text-cyan-400'
+                  : syncToast.type === 'needs-reauth'
+                  ? 'bg-amber-50 dark:bg-amber-500/15 border-amber-200 dark:border-amber-500/30 text-amber-600 dark:text-amber-400'
+                  : 'bg-rose-50 dark:bg-rose-500/15 border-rose-200 dark:border-rose-500/30 text-rose-600 dark:text-rose-400'
+              }`}
+            >
+              {syncToast.type === 'syncing' ? (
+                <RefreshCw className="w-4 h-4 animate-spin" />
+              ) : syncToast.type === 'synced' ? (
+                <CheckCircle2 className="w-4 h-4" />
+              ) : (
+                <AlertCircle className="w-4 h-4" />
+              )}
             </div>
-            {syncToast.subtitle && (
-              <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5 leading-snug break-words">
-                {syncToast.subtitle}
-              </p>
-            )}
-            {(syncToast.sheetUrl || syncToast.type === 'needs-reauth' || syncToast.type === 'error') && (
-              <div className="mt-2 flex items-center gap-2">
-                {syncToast.sheetUrl && (
-                  <a
-                    href={syncToast.sheetUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-semibold shadow-xs"
-                  >
-                    <span>Buka Sheet</span>
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
-                )}
-                {syncToast.type === 'needs-reauth' && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSyncToast(null);
-                      setIsSheetsModalOpen(true);
-                    }}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-[11px] font-semibold shadow-xs cursor-pointer"
-                  >
-                    <span>Hubungkan Ulang</span>
-                  </button>
-                )}
-                {syncToast.type === 'error' && (
-                  <button
-                    type="button"
-                    onClick={() => void runWarehouseSync(autoSyncState.lastReason || 'Sinkronisasi ulang')}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-[11px] font-semibold shadow-xs cursor-pointer"
-                  >
-                    <RefreshCw className="w-3 h-3" />
-                    <span>Coba Lagi</span>
-                  </button>
-                )}
+
+            <div className="flex-1 min-w-0">
+              <div className="flex items-start justify-between gap-2">
+                <p className="text-xs font-bold text-slate-900 dark:text-white leading-snug">
+                  {syncToast.title}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setSyncToast(null)}
+                  className="text-slate-400 hover:text-slate-700 dark:hover:text-white p-0.5 rounded cursor-pointer"
+                  aria-label="Tutup notifikasi sinkronisasi"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
               </div>
-            )}
-          </div>
-        </div>
-      )}
+              {syncToast.subtitle && (
+                <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5 leading-snug break-words">
+                  {syncToast.subtitle}
+                </p>
+              )}
+              {(syncToast.sheetUrl || syncToast.type === 'needs-reauth' || syncToast.type === 'error') && (
+                <div className="mt-2 flex items-center gap-2">
+                  {syncToast.sheetUrl && (
+                    <a
+                      href={syncToast.sheetUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-semibold shadow-xs"
+                    >
+                      <span>Buka Sheet</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  )}
+                  {syncToast.type === 'needs-reauth' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSyncToast(null);
+                        setIsSheetsModalOpen(true);
+                      }}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-[11px] font-semibold shadow-xs cursor-pointer"
+                    >
+                      <span>Hubungkan Ulang</span>
+                    </button>
+                  )}
+                  {syncToast.type === 'error' && (
+                    <button
+                      type="button"
+                      onClick={() => void runWarehouseSync(autoSyncState.lastReason || 'Sinkronisasi ulang')}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-[11px] font-semibold shadow-xs cursor-pointer"
+                    >
+                      <RefreshCw className="w-3 h-3" />
+                      <span>Coba Lagi</span>
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Inactivity Auto-Logout Warning Toast (Last 30 seconds) */}
-      {idleWarningSeconds !== null && (
-        <div className="fixed bottom-20 sm:bottom-5 right-3 sm:right-5 left-3 sm:left-auto z-50 sm:max-w-sm bg-white dark:bg-slate-900 border-2 border-amber-500 rounded-2xl shadow-2xl p-3.5 flex items-start gap-3 animate-slide-up">
-          <div className="w-9 h-9 rounded-xl bg-amber-50 dark:bg-amber-500/15 border border-amber-200 dark:border-amber-500/30 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
-            <Clock className="w-4 h-4" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-xs font-bold text-slate-900 dark:text-white">
-              Tidak Ada Aktivitas Terdeteksi
-            </p>
-            <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5 leading-snug">
-              Dashboard akan otomatis logout dalam{' '}
-              <span className="font-mono font-bold text-amber-600 dark:text-amber-400 tabular-nums">
-                {idleWarningSeconds} detik
-              </span>
-              .
-            </p>
-            <div className="mt-2">
-              <button
-                type="button"
-                onClick={recordSimagActivity}
-                className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-[11px] font-bold shadow-xs cursor-pointer"
-              >
-                Tetap Masuk
-              </button>
+      <AnimatePresence>
+        {idleWarningSeconds !== null && (
+          <motion.div
+            key="idle-warning-toast"
+            initial={{ opacity: 0, y: 16, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 12, scale: 0.96 }}
+            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+            className="fixed bottom-20 sm:bottom-5 right-3 sm:right-5 left-3 sm:left-auto z-50 sm:max-w-sm bg-white dark:bg-slate-900 border-2 border-amber-500 rounded-2xl shadow-2xl p-3.5 flex items-start gap-3"
+          >
+            <div className="w-9 h-9 rounded-xl bg-amber-50 dark:bg-amber-500/15 border border-amber-200 dark:border-amber-500/30 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+              <Clock className="w-4 h-4" />
             </div>
-          </div>
-        </div>
-      )}
-    </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-bold text-slate-900 dark:text-white">
+                Tidak Ada Aktivitas Terdeteksi
+              </p>
+              <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5 leading-snug">
+                Dashboard akan otomatis logout dalam{' '}
+                <span className="font-mono font-bold text-amber-600 dark:text-amber-400 tabular-nums">
+                  {idleWarningSeconds} detik
+                </span>
+                .
+              </p>
+              <div className="mt-2">
+                <button
+                  type="button"
+                  onClick={recordSimagActivity}
+                  className="btn-tactile px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-[11px] font-bold shadow-xs cursor-pointer"
+                >
+                  Tetap Masuk
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Smooth Logout Overlay Transition */}
+      <AnimatePresence>
+        {isLoggingOut && (
+          <motion.div
+            key="simag-logout-overlay"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/65 backdrop-blur-sm p-4"
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.92, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: -6 }}
+              transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+              className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl px-6 py-5 shadow-2xl flex items-center gap-3.5"
+            >
+              <div className="w-10 h-10 rounded-xl bg-rose-50 dark:bg-rose-500/15 border border-rose-200 dark:border-rose-500/30 text-rose-600 dark:text-rose-400 flex items-center justify-center">
+                <LogOut className="w-5 h-5" />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-slate-900 dark:text-white">Keluar dari Dashboard</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Menyimpan &amp; menutup sesi SIMAG...</p>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </MotionConfig>
   );
 }

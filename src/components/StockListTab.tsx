@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useMemo, useEffect } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { 
   MeterUnit, 
   MeterBrand, 
@@ -126,14 +127,18 @@ export const StockListTab: React.FC<StockListTabProps> = ({
       {/* Brand Stock Summary Cards: only appears when there is meter stock, hidden when stock is empty */}
       {brandsWithStock.length > 0 && (
         <div className="flex flex-wrap gap-2.5">
-          {brandsWithStock.map(brand => {
+          {brandsWithStock.map((brand, idx) => {
             const cfg = getBrandConfig(brand);
             const availableCount = brandStockCounts.get(brand) || 0;
             const isLow = availableCount <= cfg.minSafetyStock;
 
             return (
-              <div
+              <motion.div
                 key={brand}
+                layout="position"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.22, delay: Math.min(idx * 0.035, 0.2), ease: [0.16, 1, 0.3, 1] }}
                 onClick={() => setFilterBrand(filterBrand === brand ? 'ALL' : brand)}
                 className={`flex-1 min-w-[130px] max-w-full sm:max-w-[240px] cursor-pointer rounded-xl p-2.5 border transition-all text-left btn-tactile card-hover-lift ${
                   filterBrand === brand
@@ -153,17 +158,17 @@ export const StockListTab: React.FC<StockListTabProps> = ({
                 </div>
 
                 <div className="flex items-baseline gap-1">
-                  <span className={`text-lg font-bold font-mono ${isLow ? 'text-amber-600 dark:text-amber-400' : 'text-slate-900 dark:text-white'}`}>
+                  <span className={`text-lg font-bold font-mono tabular-nums ${isLow ? 'text-amber-600 dark:text-amber-400' : 'text-slate-900 dark:text-white'}`}>
                     {availableCount}
                   </span>
                   <span className="text-[10px] text-slate-500">pcs</span>
                 </div>
 
-                <div className="text-[9px] text-slate-500 mt-1 flex justify-between">
+                <div className="text-[9px] text-slate-500 mt-1 flex justify-between tabular-nums">
                   <span>Min: {cfg.minSafetyStock}</span>
                   <span className="font-semibold text-slate-600 dark:text-slate-400">{cfg.defaultUnitsPerCarton}/dus</span>
                 </div>
-              </div>
+              </motion.div>
             );
           })}
         </div>
@@ -265,11 +270,31 @@ export const StockListTab: React.FC<StockListTabProps> = ({
                           className="btn-tactile text-slate-400 dark:text-slate-500 hover:text-cyan-600 dark:hover:text-cyan-400 p-1 rounded cursor-pointer transition-colors"
                           title="Salin Nomor Seri"
                         >
-                          {copiedSn === meter.serialNumber ? (
-                            <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                          ) : (
-                            <Copy className="w-3.5 h-3.5" />
-                          )}
+                          <AnimatePresence mode="wait" initial={false}>
+                            {copiedSn === meter.serialNumber ? (
+                              <motion.span
+                                key="check"
+                                initial={{ scale: 0.6, opacity: 0 }}
+                                animate={{ scale: 1, opacity: 1 }}
+                                exit={{ scale: 0.6, opacity: 0 }}
+                                transition={{ duration: 0.14 }}
+                                className="inline-flex"
+                              >
+                                <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                              </motion.span>
+                            ) : (
+                              <motion.span
+                                key="copy"
+                                initial={{ scale: 0.8, opacity: 0 }}
+                                animate={{ scale: 1, opacity: 1 }}
+                                exit={{ scale: 0.8, opacity: 0 }}
+                                transition={{ duration: 0.14 }}
+                                className="inline-flex"
+                              >
+                                <Copy className="w-3.5 h-3.5" />
+                              </motion.span>
+                            )}
+                          </AnimatePresence>
                         </button>
                       </td>
 
