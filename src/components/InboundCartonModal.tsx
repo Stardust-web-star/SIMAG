@@ -69,7 +69,7 @@ export const InboundCartonModal: React.FC<InboundCartonModalProps> = ({
   const [startSerial, setStartSerial] = useState<string>('');
   const [generatedSerials, setGeneratedSerials] = useState<string[]>([]);
   const [targetLevel, setTargetLevel] = useState<number>(1);
-  const [receivedBy, setReceivedBy] = useState<string>('Ahmad Supriyadi (Gudang)');
+  const [receivedBy, setReceivedBy] = useState<string>('Acho');
   const [notes, setNotes] = useState<string>('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -405,16 +405,16 @@ export const InboundCartonModal: React.FC<InboundCartonModalProps> = ({
           </div>
 
           {/* Section 2: Spesifikasi Merek & Kapasitas Karton */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
+            <div className="flex flex-col">
+              <div className="flex items-center justify-between gap-2 mb-1.5 min-h-[20px]">
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 whitespace-nowrap">
                   Merek kWh Meter:
                 </label>
-                <span className="text-[10px] text-cyan-600 dark:text-cyan-400 font-medium">
+                <span className="text-[11px] text-cyan-600 dark:text-cyan-400 font-medium whitespace-nowrap truncate">
                   {isBrandManuallyEdited
-                    ? 'Diketik manual'
-                    : `Sesuai dedikasi ${targetRack?.id || 'rak'}`}
+                    ? 'Input manual'
+                    : `Dedikasi ${targetRack?.id || 'rak'}`}
                 </span>
               </div>
               <input
@@ -426,19 +426,21 @@ export const InboundCartonModal: React.FC<InboundCartonModalProps> = ({
                   setIsBrandManuallyEdited(val.trim().length > 0);
                 }}
                 placeholder={`Sesuai dedikasi rak: ${targetRack?.primaryBrand || 'Melcoinda'}`}
-                className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 focus:border-cyan-500 dark:focus:border-cyan-400 text-xs sm:text-sm text-slate-900 dark:text-slate-100 rounded-xl px-3.5 py-2.5 focus:outline-none focus:ring-1 focus:ring-cyan-500 dark:focus:ring-cyan-400 placeholder:text-slate-400 dark:placeholder:text-slate-500"
+                className="w-full h-10 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 focus:border-cyan-500 dark:focus:border-cyan-400 text-xs sm:text-sm text-slate-900 dark:text-slate-100 rounded-xl px-3.5 focus:outline-none focus:ring-1 focus:ring-cyan-500 dark:focus:ring-cyan-400 placeholder:text-slate-400 dark:placeholder:text-slate-500"
                 required
               />
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center justify-between">
-                <span>Jumlah kWh Meter Per Karton:</span>
-                <span className="text-[11px] text-cyan-600 dark:text-cyan-400 font-normal">
-                  Maksimal 10 kWh meter / dus
+            <div className="flex flex-col">
+              <div className="flex items-center justify-between gap-2 mb-1.5 min-h-[20px]">
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 whitespace-nowrap">
+                  Jumlah Per Karton:
+                </label>
+                <span className="text-[11px] text-cyan-600 dark:text-cyan-400 font-medium whitespace-nowrap">
+                  Maks. 10 unit / dus
                 </span>
-              </label>
-              <div className="flex items-center gap-2">
+              </div>
+              <div className="flex items-center h-10 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 focus-within:border-cyan-500 dark:focus-within:border-cyan-400 focus-within:ring-1 focus-within:ring-cyan-500 dark:focus-within:ring-cyan-400 rounded-xl overflow-hidden transition-colors">
                 <input
                   type="number"
                   min={1}
@@ -449,46 +451,57 @@ export const InboundCartonModal: React.FC<InboundCartonModalProps> = ({
                     setUnitsCount(val);
                     if (startSerial) recomputeSerials(startSerial, val);
                   }}
-                  className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded-xl px-3 py-2.5 text-xs sm:text-sm font-mono focus:outline-none focus:border-cyan-500"
+                  className="flex-1 min-w-0 h-full bg-transparent text-slate-900 dark:text-slate-100 px-3.5 text-xs sm:text-sm font-mono tabular-nums focus:outline-none"
                   required
                 />
-                <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold shrink-0">Pcs / Dus</span>
+                <span className="h-full px-3 flex items-center bg-slate-50 dark:bg-slate-900/80 border-l border-slate-200 dark:border-slate-800 text-[11px] text-slate-500 dark:text-slate-400 font-semibold whitespace-nowrap shrink-0">
+                  Pcs / Dus
+                </span>
               </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                Jenis Fase:
-              </label>
+            <div className="flex flex-col">
+              <div className="flex items-center justify-between gap-2 mb-1.5 min-h-[20px]">
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 whitespace-nowrap">
+                  Jenis Fase:
+                </label>
+                <span className="text-[11px] text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                  220V / 380V
+                </span>
+              </div>
               <select
                 value={phase}
                 onChange={(e) => setPhase(e.target.value as MeterPhase)}
-                className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-xs sm:text-sm text-slate-900 dark:text-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-cyan-500"
+                className="w-full h-10 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 focus:border-cyan-500 dark:focus:border-cyan-400 focus:ring-1 focus:ring-cyan-500 dark:focus:ring-cyan-400 text-xs sm:text-sm text-slate-900 dark:text-slate-200 rounded-xl px-3 focus:outline-none"
               >
                 <option value="1 Phasa">1 Phasa (Tegangan Rendah 220V)</option>
                 <option value="3 Phasa">3 Phasa (Tegangan Rendah 380V)</option>
               </select>
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center justify-between">
-                <span>Kategori kWh Meter:</span>
-                <span className="text-[10px] text-cyan-600 dark:text-cyan-400 font-normal">Prabayar / Paskabayar</span>
-              </label>
+            <div className="flex flex-col">
+              <div className="flex items-center justify-between gap-2 mb-1.5 min-h-[20px]">
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 whitespace-nowrap">
+                  Kategori kWh Meter:
+                </label>
+                <span className="text-[11px] text-cyan-600 dark:text-cyan-400 font-medium whitespace-nowrap">
+                  Prabayar / Paskabayar
+                </span>
+              </div>
               <select
                 value={category}
                 onChange={(e) => setCategory(e.target.value as MeterCategory)}
-                className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-xs sm:text-sm text-slate-900 dark:text-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-cyan-500 font-medium"
+                className="w-full h-10 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 focus:border-cyan-500 dark:focus:border-cyan-400 focus:ring-1 focus:ring-cyan-500 dark:focus:ring-cyan-400 text-xs sm:text-sm text-slate-900 dark:text-slate-200 rounded-xl px-3 focus:outline-none font-medium"
               >
-                <option value="kWh Meter Prabayar">⚡ kWh Meter Prabayar (Token / Smart)</option>
-                <option value="kWh Meter Paskabayar">🔌 kWh Meter Paskabayar (Reguler / Bulanan)</option>
+                <option value="kWh Meter Prabayar">⚡ Prabayar (Token / Smart)</option>
+                <option value="kWh Meter Paskabayar">🔌 Paskabayar (Reguler / Bulanan)</option>
               </select>
             </div>
           </div>
 
           {/* Section 3: Serial Numbers in Carton */}
           <div className="bg-slate-50 dark:bg-slate-950/60 p-4 rounded-xl border border-slate-200 dark:border-slate-800 space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
               <label className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider">
                 2. Nomor Seri (SN) kWh Meter Dalam Karton
               </label>
@@ -507,7 +520,7 @@ export const InboundCartonModal: React.FC<InboundCartonModalProps> = ({
                     recomputeSerials(e.target.value, unitsCount);
                   }}
                   placeholder="Ketik SN awal, misal: 3214550051 (akan auto-increment)"
-                  className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded-xl px-3.5 py-2 text-xs sm:text-sm font-mono focus:outline-none focus:border-cyan-500 placeholder:text-slate-400 dark:placeholder:text-slate-500"
+                  className="w-full h-10 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded-xl px-3.5 text-xs sm:text-sm font-mono focus:outline-none focus:border-cyan-500 placeholder:text-slate-400 dark:placeholder:text-slate-500"
                 />
               </div>
               <button
@@ -518,7 +531,7 @@ export const InboundCartonModal: React.FC<InboundCartonModalProps> = ({
                   setStartSerial(sn);
                   recomputeSerials(sn, unitsCount);
                 }}
-                className="btn-tactile px-3 py-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold shrink-0 cursor-pointer transition-colors"
+                className="btn-tactile h-10 px-3.5 bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold shrink-0 cursor-pointer transition-colors"
               >
                 Generate SN
               </button>
@@ -548,35 +561,44 @@ export const InboundCartonModal: React.FC<InboundCartonModalProps> = ({
           </div>
 
           {/* Section 4: Target Rak & Shelf Selection */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                Alokasi Rak Fisik Gudang:
-              </label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
+            <div className="flex flex-col">
+              <div className="flex items-center justify-between gap-2 mb-1.5 min-h-[20px]">
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 whitespace-nowrap">
+                  Alokasi Rak Fisik Gudang:
+                </label>
+              </div>
               <select
                 value={targetRackId}
                 onChange={(e) => handleRackChange(e.target.value)}
-                className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-xs sm:text-sm text-slate-900 dark:text-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-cyan-500"
+                className="w-full h-10 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 focus:border-cyan-500 dark:focus:border-cyan-400 text-xs sm:text-sm text-slate-900 dark:text-slate-200 rounded-xl px-3 focus:outline-none"
               >
-                {racks.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.id} - {r.name} (Dedikasi: {r.primaryBrand})
-                  </option>
-                ))}
+                {racks.map((r) => {
+                  const normId = r.id.toLowerCase().replace(/[^a-z0-9]/g, '');
+                  const normName = r.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+                  const displayName = normName.startsWith(normId) ? r.name : `${r.id} - ${r.name}`;
+                  return (
+                    <option key={r.id} value={r.id}>
+                      {displayName} (Dedikasi: {r.primaryBrand})
+                    </option>
+                  );
+                })}
               </select>
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center justify-between">
-                <span>Tingkat Rak (Level):</span>
-                <span className={`text-[11px] ${isShelfFull ? 'text-rose-600 dark:text-rose-400 font-bold' : 'text-slate-500 dark:text-slate-400'}`}>
+            <div className="flex flex-col">
+              <div className="flex items-center justify-between gap-2 mb-1.5 min-h-[20px]">
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 whitespace-nowrap">
+                  Tingkat Rak (Level):
+                </label>
+                <span className={`text-[11px] whitespace-nowrap tabular-nums ${isShelfFull ? 'text-rose-600 dark:text-rose-400 font-bold' : 'text-slate-500 dark:text-slate-400'}`}>
                   Terisi: {currentCartonsInShelf.length}/{targetShelf?.cartonCapacity || 16} Dus
                 </span>
-              </label>
+              </div>
               <select
                 value={targetLevel}
                 onChange={(e) => setTargetLevel(Number(e.target.value))}
-                className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-xs sm:text-sm text-slate-900 dark:text-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-cyan-500"
+                className="w-full h-10 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 focus:border-cyan-500 dark:focus:border-cyan-400 text-xs sm:text-sm text-slate-900 dark:text-slate-200 rounded-xl px-3 focus:outline-none"
               >
                 <option value={1}>Tingkat 1 (Atas)</option>
                 <option value={2}>Tingkat 2</option>
@@ -587,9 +609,9 @@ export const InboundCartonModal: React.FC<InboundCartonModalProps> = ({
           </div>
 
           {/* Section 5: Staff & Notes */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
+            <div className="flex flex-col">
+              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5 min-h-[20px] flex items-center">
                 Petugas Penerima Gudang:
               </label>
               <input
@@ -597,13 +619,13 @@ export const InboundCartonModal: React.FC<InboundCartonModalProps> = ({
                 value={receivedBy}
                 onChange={(e) => setReceivedBy(e.target.value)}
                 placeholder="Nama Petugas Gudang"
-                className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded-xl px-3 py-2 text-xs sm:text-sm focus:outline-none focus:border-cyan-500"
+                className="w-full h-10 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded-xl px-3.5 text-xs sm:text-sm focus:outline-none focus:border-cyan-500"
                 required
               />
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+            <div className="flex flex-col">
+              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5 min-h-[20px] flex items-center">
                 Catatan Kondisi Dus:
               </label>
               <input
@@ -611,7 +633,7 @@ export const InboundCartonModal: React.FC<InboundCartonModalProps> = ({
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="Misal: Segel pabrik utuh, kondisi kardus baik"
-                className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded-xl px-3 py-2 text-xs sm:text-sm focus:outline-none focus:border-cyan-500 placeholder:text-slate-400 dark:placeholder:text-slate-500"
+                className="w-full h-10 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded-xl px-3.5 text-xs sm:text-sm focus:outline-none focus:border-cyan-500 placeholder:text-slate-400 dark:placeholder:text-slate-500"
               />
             </div>
           </div>

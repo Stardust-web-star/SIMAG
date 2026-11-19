@@ -947,11 +947,16 @@ export const RackVisualizer: React.FC<RackVisualizerProps> = ({
                   onChange={(e) => setTargetMoveRack(e.target.value)}
                   className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-slate-200 focus:outline-none focus:border-cyan-500"
                 >
-                  {racks.map(r => (
-                    <option key={r.id} value={r.id}>
-                      {r.id} - {r.name} ({r.zone})
-                    </option>
-                  ))}
+                  {racks.map(r => {
+                    const normId = r.id.toLowerCase().replace(/[^a-z0-9]/g, '');
+                    const normName = r.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+                    const displayName = normName.startsWith(normId) ? r.name : `${r.id} - ${r.name}`;
+                    return (
+                      <option key={r.id} value={r.id}>
+                        {displayName} ({r.zone})
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
 
